@@ -1,33 +1,56 @@
-# Project
+# Azure Linux Auto Recover v2
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
 
-As the maintainer of this project, please make a few updates:
+The Azure Linux Auto Recover v2 (ALAR2) tool is intended to fix boot issue for the most common issues. ALAR2 superceeds the previous version. ALAR2 is completely rewritten in Rust. It provides also a standalone mode to run the tool without the help of the 'vm repair extension'.o
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
 
-## Contributing
+The most common scenarios which are covered at the moment are:
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+* malformed /etc/fstab 
+  * syntax error
+  * missing disk
+* damaged initrd or missing initrd line in the /boot/grub/grub.cfg
+* last installed kernel is not bootable
+* serialconsole and grub are not configured well
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+### FSTAB
+This action does strip off any lines in the /etc/fstab file which are not needed to boot a system
+It makes a copy of the original file first. So after the start of the OS the admin is able to edit the fstab again and correct any errors which didn’t allow a reboot of the system before
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+### Kernel
+This action does change the default kernel.
+It modifies the configuration so that the previous kernel version gets booted. After the boot the admin is able to replace the broken kernel.
 
-## Trademarks
+### Initrd
+This action corrects two issues that can happen when a new kernel gets installed 
+1. The grub.cfg file is missing an “initrd” line or is missing the file to be use
+2. The initrd image is missing
+So it either fixes the grub.cfg file and/or creates a new initrd image 
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+### Serialconsole
+This action corrects and incorrect or malformed serialsconsole configuration as well 
+corrects an incorrect or malformed GRUB console configuration. With this option one gets information displayed on the serialconsole and gets also access to the GRUB menu in case it is not displaed because of an incorrect setup.
+
+### How can I recover my failed VM?
+To use the ALAR2 tool with the help of the vm repair extension you have to utilize the command ‘run’ and its option ‘--run-id’
+The script-id for the automated recovery is: linux-alar2
+
+#### Example ####
+
+az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --copy-disk-name repairdiskcopy'
+
+az vm repair run --verbose -g centos7 -n cent7 --run-id linux-alar2 --parameters initrd --run-on-repair
+
+az vm repair restore --verbose -g centos7 -n cent7
+
+You can pass over either a single recover-operation or multiple operations, i.e., fstab; ‘fstab,initrd’ 
+Separate the recover operation with a comma in this case – no spaces allowed!
+
+### Limitation
+* Classic VMs are not supported
+
+### Distributions supported
+* CentOS/Redhat 6.8 - 8.2
+* Ubuntu 16.4 LTS and Ubuntu 18.4 LTS
+* Suse 12 and 15
+* Debain 9 and 10
