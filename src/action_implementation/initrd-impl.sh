@@ -40,7 +40,7 @@ recover_ubuntu() {
 recover_redhat() {
     kernel_version=$(sed -e "s/kernel-//" <<< $(rpm -q kernel --last  | head -n 1 | cut -f1 -d' '))
     # Get sure that all required modles are loaded
-    sed -i s/add_driver.*/add_drivers+="hv_vmbus hv_netvsc hv_storvsc"/ /etc/dracut.conf
+    echo add_drivers+=" hv_vmbus hv_netvsc hv_storvsc" >> /etc/dracut.conf
     if [[ "$isRedHat6" == "true" ]]; then
         # verify the grub.conf and correct it if needed
         cd "$tmp_dir"
