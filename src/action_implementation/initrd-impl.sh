@@ -3,9 +3,7 @@
 #
 
 recover_suse() {
-    kernel_type=$(uname -r | grep -q default && echo "kernel-default" || echo "kernel-azure")
-    kernel_version=$(zypper se -is ${kernel_type} | grep ${kernel_type} | awk '{print $7;exit}')
-    kernel_version=$(sed -e "s/kernel-//" <<< $(rpm -q kernel --last  | head -n 1 | cut -f1 -d' '))
+    kernel_version=$(sed -e "s/kernel-azure-//" <<< $(rpm -q kernel-azure --last  | head -n 1 | cut -f1 -d'|' | cut -f 1-4 -d '.'))-azure
     # Get sure that all required modles are loaded
     echo 'add_drivers+=" hv_vmbus hv_netvsc hv_storvsc"' >> /etc/dracut.conf
     mkinitrd /boot/initrd-"${kernel_version}" "$kernel_version"
