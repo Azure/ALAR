@@ -245,17 +245,19 @@ fn umount_investigations(distro: &distro::Distro) {
     // umount EFI
     if helper::has_efi_part(distro) {
         mount::umount(
-            helper::get_ade_mounpoint(helper::get_efi_part_path(distro).as_str()).as_str(),
+            constants::INVESTIGATEROOT_EFI_DIR
         );
     }
     // umount boot
-    mount::umount(helper::get_ade_mounpoint(distro.boot_part.boot_part_path.as_str()).as_str());
+    mount::umount(
+        constants::INVESTIGATEROOT_BOOT_DIR
+    );
 
     // umount osencrypt
     if !distro.is_lvm {
         //  If it is LVM we have already unmounted the '/investigationroot'
         mount::umount(
-            helper::get_ade_mounpoint(distro.rescue_root.root_part_path.as_str()).as_str(),
+            constants::INVESTIGATEROOT_DIR
         );
     }
 }
