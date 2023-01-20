@@ -19,13 +19,14 @@ pub struct Distro {
     pub kind: DistroKind,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub enum DistroKind {
     Debian,
     Suse,
     RedHatCentOS,
     RedHatCentOS6,
     Ubuntu,
+    #[default]
     Undefined,
 }
 #[derive(Debug)]
@@ -66,9 +67,10 @@ impl EfiPartition {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq,Default)]
 pub enum EfiPartT {
     EfiPart(EfiPartition),
+    #[default]
     NoEFI,
 }
 
@@ -78,17 +80,21 @@ impl EfiPartT {
     }
 }
 
+/*
 impl Default for EfiPartT {
     fn default() -> Self {
         EfiPartT::NoEFI
     }
 }
+*/
 
+/*
 impl Default for DistroKind {
     fn default() -> Self {
         DistroKind::Undefined
     }
 }
+*/
 
 impl BootPartDetails {
     fn new() -> Self {
@@ -148,8 +154,6 @@ impl Distro {
 }
 
 fn get_partitions(partitions: &mut Vec<String>) {
-    // For testing ALAR we need a conditional compile
-
         let link = read_link(constants::RESCUE_DISK);
         let sedscript = r#"s|[ ]\+| |g;s|^[ \t]*||"#;
         let out =
@@ -267,7 +271,7 @@ fn do_suse_or_lvm_or_ubuntu(partition_info: Vec<String>, distro: &mut Distro) {
     if distro.is_ade {
         let pretty_name = helper::get_pretty_name("/investigateroot/etc/os-release"); // This path must exists, otherwise it can not be determined
         if pretty_name.is_empty() {
-            helper::log_error("'/investigationrooot' needs to be mounted first. ALAR does stop");
+            helper::log_error("'/investigationroot' needs to be mounted first. ALAR does stop");
             process::exit(1);
         }
         if pretty_name.contains("Ubuntu") {
