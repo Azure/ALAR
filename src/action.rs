@@ -17,7 +17,7 @@ pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> i
 
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}
-        Err(e) => println!("Error in set current dir : {}", e),
+        Err(e) => println!("Error in set current dir : {e}"),
     }
 
     // Set the environment correct
@@ -112,5 +112,5 @@ pub(crate) fn is_action_available(action_name: &str) -> io::Result<bool> {
     }
     Ok(actions
         .iter()
-        .any(|a| a.ends_with(&format!("{}-impl.sh", action_name))))
+        .any(|a| a.ends_with(&format!("{action_name}-impl.sh"))))
 }
