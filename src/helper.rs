@@ -29,11 +29,11 @@ pub fn log_debug(msg: &str) {
 }
 
 pub(crate) fn read_link(path: &str) -> String {
-    match fs::canonicalize(&path) {
-        Ok(value) => return format!("{}", value.display()),
+    match fs::canonicalize(path) {
+        Ok(value) => format!("{}", value.display()),
         Err(e) => {
             log_error(&e.to_string());
-            panic!("readlink did fail")
+            panic!("readlink did fail : {path}")
         }
     }
 }
@@ -89,7 +89,8 @@ pub(crate) fn get_pretty_name(path: &str) -> String {
 
 pub(crate) fn get_ade_mounpoint(source: &str) -> String {
     let mut mountpoint = "".to_string();
-    if let Ok(path) = cmd_lib::run_fun!(cat /proc/mounts | grep $source | cut -d" " -f2) {
+    let func_string = r#"cat /proc/mounts | grep $source | cut -d" " -f2"#;
+    if let Ok(path) = cmd_lib::run_fun!(func_string) {
         mountpoint = path;
     }
     log_info(format!("unmounted: {}", &mountpoint).as_str());
@@ -108,7 +109,7 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
 
     match partition_filesystem {
         "xfs" => {
-            log_info(format!("fsck for XFS on {}", partition_path).as_str());
+            log_info(format!("fsck for XFS on {partition_path}").as_str());
             if let Err(e) = mount::mkdir_assert() {
                 panic!("Creating assert directory is not possible : '{}'. ALAR is not able to proceed further",e);
             }
@@ -120,7 +121,7 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
             mount::umount(constants::ASSERT_PATH);
 
             if let Ok(stat) = process::Command::new("xfs_repair")
-                .arg(&partition_path)
+                .arg(partition_path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
@@ -131,16 +132,16 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
         "fat16" => {
             log_info("fsck for fat16/vfat");
             if let Ok(stat) = process::Command::new("fsck.vfat")
-                .args(&["-p", partition_path])
+                .args(["-p", partition_path])
                 .status()
             {
                 exit_code = stat.code();
             }
         }
         _ => {
-            log_info(format!("fsck for {}", partition_filesystem).as_str());
+            log_info(format!("fsck for {partition_filesystem}").as_str());
             if let Ok(stat) = process::Command::new(format!("fsck.{}", partition_filesystem))
-                .args(&["-p", partition_path])
+                .args(["-p", partition_path])
                 .status()
             {
                 exit_code = stat.code();
