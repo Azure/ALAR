@@ -11,3 +11,6 @@ pub(crate) static REDHAT_RELEASE: &str = "/tmp/assert/etc/redhat-release";
 pub(crate) static OS_RELEASE: &str = "/tmp/assert/etc/os-release";
 pub(crate) static OSENCRYPT_PATH: &str = "/dev/mapper/osencrypt";
 pub(crate) static ACTION_IMPL_DIR: &str = "/tmp/action_implementation";
+pub(crate) static INVESTIGATEROOT_DIR: &str = "/investigateroot";
+pub(crate) static INVESTIGATEROOT_BOOT_DIR: &str = "/investigateroot/boot";
+pub(crate) static INVESTIGATEROOT_EFI_DIR: &str = "/investigateroot/boot/efi";
