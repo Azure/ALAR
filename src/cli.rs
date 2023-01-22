@@ -21,6 +21,8 @@ OPTIONS
 */
 use clap::{App, Arg};
 
+use crate::constants::{self, VERSION};
+
 pub(crate) struct CliInfo {
     pub(crate) standalone: bool,
     pub(crate) action_directory: String,
@@ -40,7 +42,7 @@ one or more different actions in order to get a VM in a running state that allow
 the administrator to further recover the VM after it is up, running and accessible again.
 ";
    let matches = App::new("Azure Linux Auto Recover")
-                          .version("0.3.1")
+                          .version(VERSION)
                           .author("Marcus Lachmanez , malachma@microsoft.com")
                           .about(about)
                           .arg(Arg::with_name("standalone")
