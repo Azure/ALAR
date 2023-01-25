@@ -6,7 +6,7 @@ use std::{fs, io, process};
 pub(crate)  fn mkdir_assert()  -> Result<(), io::Error>{
     match fs::create_dir_all(constants::ASSERT_PATH) {
         Ok(()) => Ok(()) ,
-        Err(e) => {println!("Error while creating the assert directory: {}", e);
+        Err(e) => {println!("Error while creating the assert directory: {e}");
             Err(e)
     }
     }
@@ -15,7 +15,7 @@ pub(crate)  fn mkdir_assert()  -> Result<(), io::Error>{
 pub(crate)  fn mkdir_rescue_root()  -> Result<(), io::Error>{
     match fs::create_dir_all(constants::RESCUE_ROOT) {
         Ok(()) => Ok(()) ,
-        Err(e) => {println!("Error while creating the rescue-root directory: {}", e);
+        Err(e) => {println!("Error while creating the rescue-root directory: {e}");
             Err(e)
     }
     }
@@ -42,7 +42,7 @@ fn mount( source: &str, destination: &str, option: Option<&str>) {
             helper::log_info(format!("mounted {} to {}", source, &destination).as_str() );
         }
         Err(why) => {
-            helper::log_error(format!("failed to mount {} to {}: {}", source, destination, why).as_str());
+            helper::log_error(format!("failed to mount {source} on {destination}: {why}").as_str());
             panic!();
         }
     } 
@@ -62,7 +62,7 @@ pub(crate)  fn bind_mount(source: &str, destination: &str) {
             //helper::log_info(format!("mounted {} to {}", source, &destination).as_str() );
         }
         Err(why) => {
-            helper::log_error(format!("failed to mount {} to {}: {}", source, destination, why).as_str());
+            helper::log_error(format!("failed to mount {source} on {destination}: {why}").as_str());
             panic!();
         }
     } 
@@ -98,7 +98,7 @@ pub(crate) fn umount(destination: &str) {
     match sys_mount::unmount(destination, sys_mount::UnmountFlags::DETACH) {
         Ok(()) => (),
         Err(why) => {
-            helper::log_error(format!("Failed to unmount {}: {}", destination, why).as_str());
+            helper::log_error(format!("Failed to unmount {destination}: {why}").as_str());
             helper::log_error("This shouldn't cause a severe issue for ALAR.");
         }
     }
