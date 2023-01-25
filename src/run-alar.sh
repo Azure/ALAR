@@ -1,27 +1,21 @@
 #!/bin/bash
 
+. /etc/lsb-release
+if [[ $DISTRIB_ID != "Ubuntu" ]]; then
+    echo "ALAR IS ONLY SUPPORTED ON UBUNTU!"
+    exit 1
+fi
+# Dependency
+apt-get update
+apt-get install libclang-dev -y
 
 cd /tmp
-mkdir alar2
 
-// Get the ghrel tool in order to download the latest ALAR bin
-wget -O ghrel.tgz https://github.com/jreisinger/ghrel/releases/download/v0.5.2/ghrel_0.5.2_linux_amd64.tar.gz
-tar xzf ghrel.tgz ghrel
-chmod 700 ghrel
-
-// Get alar2 binary
-./ghrel Azure/ALAR
+# Get version of ALAR and fetch it
+VERSION=$(curl -s -L https://raw.githubusercontent.com/Azure/ALAR/main/Cargo.toml | grep  -i VERSION | cut -f3 -d' ' | cut -c2-6)
+curl -s -o alar2 -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar2
 chmod 700 alar2
 
-mkdir action_implementation
-pushd action_implementation
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/fstab-impl.sh
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/grub-awk.sh
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/initrd-impl.sh
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/kernel-impl.sh
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/serialconsole-impl.sh
-wget https://raw.githubusercontent.com/Azure/ALAR/main/src/action_implementation/test-impl.sh
-popd
-
-alar2 $1
+# Start the recovery 
+./alar2 -s $1
 exit $?
