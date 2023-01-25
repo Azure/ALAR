@@ -111,7 +111,7 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
         "xfs" => {
             log_info(format!("fsck for XFS on {partition_path}").as_str());
             if let Err(e) = mount::mkdir_assert() {
-                panic!("Creating assert directory is not possible : '{}'. ALAR is not able to proceed further",e);
+                panic!("Creating assert directory is not possible : '{e}'. ALAR is not able to proceed further");
             }
 
             // In case the filesystem has valuable metadata changes in a log which needs to
@@ -140,7 +140,7 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
         }
         _ => {
             log_info(format!("fsck for {partition_filesystem}").as_str());
-            if let Ok(stat) = process::Command::new(format!("fsck.{}", partition_filesystem))
+            if let Ok(stat) = process::Command::new(format!("fsck.{partition_filesystem}"))
                 .args(["-p", partition_path])
                 .status()
             {

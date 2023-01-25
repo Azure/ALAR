@@ -157,7 +157,7 @@ fn do_redhat_lvm(mut partition_info: Vec<String>, mut distro: &mut distro::Distr
     // At first we need to prepare the LVM setup
     match run_cmd!(pvscan -q -q; vgscan -q -q; lvscan -q -q;) {
         Ok(_) => {}
-        Err(error) => panic!("There is a problem to setup LVM correct. {}", error),
+        Err(error) => panic!("There is a problem to setup LVM correct. {error}"),
     }
 
     if !distro.is_ade {
@@ -232,8 +232,7 @@ fn do_redhat_lvm(mut partition_info: Vec<String>, mut distro: &mut distro::Distr
 pub(crate) fn verify_redhat_nolvm(distro: &mut distro::Distro) {
     if let Err(e) = mount::mkdir_assert() {
         panic!(
-            "Creating assert directory is not possible : {}. ALAR is not able to proceed further",
-            e
+            "Creating assert directory is not possible : {e}. ALAR is not able to proceed further"
         );
     }
 
@@ -250,8 +249,7 @@ pub(crate) fn verify_redhat_nolvm(distro: &mut distro::Distro) {
 pub(crate) fn verify_redhat_lvm(distro: &mut distro::Distro) {
     if let Err(e) = mount::mkdir_assert() {
         panic!(
-            "Creating assert directory is not possible : {}. ALAR is not able to proceed further",
-            e
+            "Creating assert directory is not possible : {e}. ALAR is not able to proceed further"
         );
     }
     mount::mount_path_assert(distro.lvm_details.lvm_root_part.as_str());

@@ -170,13 +170,12 @@ fn get_partitions(partitions: &mut Vec<String>) {
                 }
                 helper::log_info(
                     format!(
-                        "We have the following partitions determined: {:?}",
-                        partitions
+                        "We have the following partitions determined: {partitions:?}"               
                     )
                     .as_str(),
                 );
             }
-            Err(e) => panic!("Error {:?}", e),
+            Err(e) => panic!("Error {e:?}"),
         }
 
     
@@ -190,8 +189,7 @@ fn do_old_ubuntu_or_centos(partition_info: Vec<String>, mut distro: &mut Distro)
     // or whether it is a single partiton CentOs distro
     if let Err(e) = mount::mkdir_assert() {
         panic!(
-            "Creating assert directory is not possible : '{}'. ALAR is not able to proceed further",
-            e
+            "Creating assert directory is not possible : '{e}'. ALAR is not able to proceed further"
         );
     }
 

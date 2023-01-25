@@ -21,7 +21,7 @@ fn main() {
     // At first we need to verify the distro we have to work with
     // the Distro struct does contain then all of the required information
     let distro = distro::Distro::new();
-    eprintln!("{:?}", distro);
+    eprintln!("{distro:?}");
 
     
    
@@ -44,8 +44,7 @@ fn main() {
     match mount::mkdir_rescue_root() {
         Ok(_) => {}
         Err(e) => panic!(
-            "The rescue-root dir can't be created. This is not recoverable! : {} ",
-            e
+            "The rescue-root dir can't be created. This is not recoverable! : {e} "
         ),
     }
 
@@ -68,14 +67,13 @@ fn main() {
                 }
             },
             Ok(_is @ false) => {
-                helper::log_error(format!("Action '{}' is not available", action_name).as_str());
+                helper::log_error(format!("Action '{action_name}' is not available").as_str());
                 is_action_error = true;
             }
             Err(e) => {
                 helper::log_error(
                     format!(
-                        "There was an error raised while verifying the action: '{}'",
-                        e
+                        "There was an error raised while verifying the action: '{e}'"
                     )
                     .as_str(),
                 );

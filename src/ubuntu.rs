@@ -8,8 +8,7 @@ use crate::mount;
 pub(crate) fn verify_ubuntu(mut distro: &mut distro::Distro) {
     if let Err(e) = mount::mkdir_assert() {
         panic!(
-            "Creating assert directory is not possible: {} ALAR is not able to proceed further",
-            e
+            "Creating assert directory is not possible: {e} ALAR is not able to proceed further"
         );
     }
 

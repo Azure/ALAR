@@ -168,14 +168,13 @@ fn mount_support_filesystem() {
     match mkdir_support_filesystems() {
         Ok(()) => {}
         Err(e) => panic!(
-            "Support Filesystems are not able to be created. This is not recoverable : {}",
-            e
+            "Support Filesystems are not able to be created. This is not recoverable : {e}"
         ),
     }
     for fs in constants::SUPPORT_FILESYSTEMS.to_string().split(' ') {
         mount::bind_mount(
-            format!("/{}/", fs).as_str(),
-            format!("{}{}", constants::RESCUE_ROOT, fs).as_str(),
+            format!("/{fs}/").as_str(),
+            format!("{}{fs}", constants::RESCUE_ROOT).as_str(),
         );
     }
 }
@@ -232,14 +231,14 @@ fn copy_actions_totmp(distro: &distro::Distro, cli_info: &cli::CliInfo) {
 
         match env::current_dir() {
             Ok(cd) => println!("The current dir is : {}", cd.display()),
-            Err(e) => println!("Error : {}", e),
+            Err(e) => println!("Error : {e}"),
         }
 
         // base directory already set correct by linux-alar2.sh
         match dir::copy("src/action_implementation", "/tmp", &options) {
             Ok(_) => {}
             Err(e) => {
-                println!("Copy operation for action_implementation directory failed. ALAR needs to stop: {}", e);
+                println!("Copy operation for action_implementation directory failed. ALAR needs to stop: {e}");
                 distro_umount(distro);
                 process::exit(1);
             }
@@ -247,8 +246,7 @@ fn copy_actions_totmp(distro: &distro::Distro, cli_info: &cli::CliInfo) {
     } else if let Err(e) = standalone::download_action_scripts(cli_info) {
         distro_umount(distro);
         panic!(
-            "action scripts are not able to be copied or downloadable : '{}'",
-            e
+            "action scripts are not able to be copied or downloadable : '{e}'"
         );
     }
 }
