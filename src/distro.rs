@@ -80,21 +80,7 @@ impl EfiPartT {
     }
 }
 
-/*
-impl Default for EfiPartT {
-    fn default() -> Self {
-        EfiPartT::NoEFI
-    }
-}
-*/
 
-/*
-impl Default for DistroKind {
-    fn default() -> Self {
-        DistroKind::Undefined
-    }
-}
-*/
 
 impl BootPartDetails {
     fn new() -> Self {
@@ -164,7 +150,7 @@ fn get_partitions(partitions: &mut Vec<String>) {
             Ok(v) => {
                 for line in v.lines() {
                     // Need to check if no garbage is in it
-                    if line.contains("GiB") || line.contains("MiB") {
+                    if line.contains("GiB") || line.contains("MiB") || line.contains("KiB"){
                         partitions.push(line.to_string());
                     }
                 }
