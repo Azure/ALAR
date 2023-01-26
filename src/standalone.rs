@@ -4,6 +4,16 @@ use crate::constants;
 use std::{io,process,fs};
 
 pub(crate) fn download_action_scripts(cli_info: &cli::CliInfo) -> io::Result<()> {
+
+    // At first clean 
+    if let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
+        println!(
+            "Directory {} can not be removed : '{}'",
+            constants::ACTION_IMPL_DIR,
+            err
+        );
+    }
+
     if cli_info.action_directory.is_empty() {
     // First download the git archive
     // Process::Command used in order to ensure we finish the download process

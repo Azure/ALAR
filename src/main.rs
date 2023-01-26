@@ -51,6 +51,14 @@ fn main() {
     // Step 2 of prepare and mount. Mount the right dirs depending on the distro determined
     prepare_action::distro_mount(&distro, &cli_info);
 
+    // Get the actions
+    if let Err(e) = standalone::download_action_scripts(&cli::cli()) {
+        prepare_action::distro_umount(&distro);
+        panic!(
+            "action scripts are not able to be copied or downloadable : '{e}'"
+        );
+    }
+
     // Verify we have an implementation available for the action to be executed
     // Define a variable for the error condition that may happen
     let mut is_action_error = false;

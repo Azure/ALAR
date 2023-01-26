@@ -199,9 +199,6 @@ pub(crate) fn distro_mount(distro: &distro::Distro, cli_info: &cli::CliInfo) {
         DistroKind::RedHatCentOS6 => redhat6_mount(distro),
         DistroKind::Undefined => {} // Nothing to do here we have covered this condition already
     }
-    // Also copy the recovery scripts to /tmp in order to make them available for the chroot
-    // operation we do later
-    copy_actions_totmp(distro, cli_info);
 }
 
 pub(crate) fn distro_umount(distro: &distro::Distro) {
@@ -214,39 +211,3 @@ pub(crate) fn distro_umount(distro: &distro::Distro) {
     }
 }
 
-fn copy_actions_totmp(distro: &distro::Distro, cli_info: &cli::CliInfo) {
-    // We need to copy the action scripts to /tmp
-    // This is the directory chroot can access
-
-    if let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
-        println!(
-            "Directory {} can not be removed : '{}'",
-            constants::ACTION_IMPL_DIR,
-            err
-        );
-    }
-    if !cli_info.standalone {
-        let mut options = dir::CopyOptions::new(); //Initialize default values for CopyOptions
-        options.skip_exist = true;
-
-        match env::current_dir() {
-            Ok(cd) => println!("The current dir is : {}", cd.display()),
-            Err(e) => println!("Error : {e}"),
-        }
-
-        // base directory already set correct by linux-alar2.sh
-        match dir::copy("src/action_implementation", "/tmp", &options) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("Copy operation for action_implementation directory failed. ALAR needs to stop: {e}");
-                distro_umount(distro);
-                process::exit(1);
-            }
-        }
-    } else if let Err(e) = standalone::download_action_scripts(cli_info) {
-        distro_umount(distro);
-        panic!(
-            "action scripts are not able to be copied or downloadable : '{e}'"
-        );
-    }
-}
