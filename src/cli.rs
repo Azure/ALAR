@@ -21,7 +21,7 @@ OPTIONS
 */
 use clap::{App, Arg};
 
-use crate::constants::{self, VERSION};
+use crate::constants::{ VERSION};
 
 pub(crate) struct CliInfo {
     pub(crate) standalone: bool,
@@ -45,17 +45,10 @@ the administrator to further recover the VM after it is up, running and accessib
                           .version(VERSION)
                           .author("Marcus Lachmanez , malachma@microsoft.com")
                           .about(about)
-                          .arg(Arg::with_name("standalone")
-                               .short('s')
-                               .long("standalone")
-                               .help("Operates the tool in a standalone mode.")
-                               .takes_value(false))
                           .arg(Arg::with_name("directory")
                                 .short('d')
                                 .long("directory")
                                 .takes_value(true)
-                                .requires("standalone") // if directory is set 
-                                // it is mandatory to have standalone set as well
                                 .help("The directory in which the actions are defined.\nRequires the standalone flag")
                            )
                           .arg(Arg::with_name("ACTION")
