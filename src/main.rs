@@ -49,7 +49,7 @@ fn main() {
     }
 
     // Step 2 of prepare and mount. Mount the right dirs depending on the distro determined
-    prepare_action::distro_mount(&distro, &cli_info);
+    prepare_action::distro_mount(&distro);
 
     // Get the actions
     if let Err(e) = standalone::download_action_scripts(&cli::cli()) {

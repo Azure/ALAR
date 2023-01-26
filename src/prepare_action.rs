@@ -1,13 +1,10 @@
-use crate::cli;
 use crate::constants;
 use crate::distro;
 use crate::distro::DistroKind;
 use crate::helper;
 use crate::mount;
-use crate::standalone;
 
-use fs_extra::dir;
-use std::{env, fs, io, process};
+use std::{fs, io};
 
 pub(crate) fn ubuntu_mount(distro: &distro::Distro) {
     // We have to verify also whether we have old Ubuntus/Debian with one partition only
@@ -191,7 +188,7 @@ fn mkdir_support_filesystems() -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn distro_mount(distro: &distro::Distro, cli_info: &cli::CliInfo) {
+pub(crate) fn distro_mount(distro: &distro::Distro) {
     match distro.kind {
         DistroKind::Debian | DistroKind::Ubuntu => ubuntu_mount(distro),
         DistroKind::Suse => suse_mount(distro),
