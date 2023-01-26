@@ -87,15 +87,6 @@ pub(crate) fn get_pretty_name(path: &str) -> String {
     pretty_name
 }
 
-pub(crate) fn get_ade_mounpoint(source: &str) -> String {
-    let mut mountpoint = "".to_string();
-    let func_string = r#"cat /proc/mounts | grep $source | cut -d" " -f2"#;
-    if let Ok(path) = cmd_lib::run_fun!(func_string) {
-        mountpoint = path;
-    }
-    log_info(format!("unmounted: {}", &mountpoint).as_str());
-    mountpoint
-}
 
 pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
     // Need to handel the condition if no filesystem is available
