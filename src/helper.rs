@@ -128,6 +128,25 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
             {
                 exit_code = stat.code();
             }
+
+            /*
+               Because of RedHat9 a second validation needs to be performed
+               as xfs_repair on Ubuntu isn't able to cope with the newer XFS v5 format which is used on RedHat9
+               --> Found unsupported filesystem features
+            */
+
+            if let Ok(value) = process::Command::new("xfs_repair")
+                            .args([partition_path])
+                            .output() {
+                // unwrap should be safe here as we get a result returned
+                // xfs_repair is throwing an error, thus we need to use stderr
+                let result_value = String::from_utf8(value.stderr).unwrap();
+                if result_value.contains("Found unsupported filesystem features") {
+                    exit_code = Some(0);
+                }
+            }
+                
+
         }
         "fat16" => {
             log_info("fsck for fat16/vfat");
