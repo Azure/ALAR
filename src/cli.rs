@@ -21,8 +21,6 @@ OPTIONS
 */
 use clap::{App, Arg};
 
-use crate::constants::{ VERSION};
-
 pub(crate) struct CliInfo {
     pub(crate) standalone: bool,
     pub(crate) action_directory: String,
@@ -42,7 +40,7 @@ one or more different actions in order to get a VM in a running state that allow
 the administrator to further recover the VM after it is up, running and accessible again.
 ";
    let matches = App::new("Azure Linux Auto Recover")
-                          .version(VERSION)
+                          .version(clap::crate_version!())
                           .author("Marcus Lachmanez , malachma@microsoft.com")
                           .about(about)
                           .arg(Arg::with_name("directory")
@@ -61,8 +59,7 @@ the administrator to further recover the VM after it is up, running and accessib
     // Calling .unwrap() is safe here because "ACTION" is required
     // this is true for directory as well if flag standalone is present 
     cli_info.actions = matches.value_of("ACTION").unwrap().to_string();
-    cli_info.standalone = matches.is_present("standalone"); 
-    if cli_info.standalone && matches.is_present("directory") {
+    if matches.is_present("directory") {
             cli_info.action_directory = matches.value_of("directory").unwrap().to_string();
         }
     
