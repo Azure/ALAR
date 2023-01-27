@@ -20,7 +20,7 @@ pub(crate)  fn mkdir_rescue_root()  -> Result<(), io::Error>{
     }
     }
 }
-fn mount( source: &str, destination: &str, option: Option<&str>) {
+fn mount( source: &str, destination: &str, _option: Option<&str>) {
 
     // There is an issue on Ubuntu that the XFS filesystem is not enabled by default
     // We need to load the driver first
@@ -37,7 +37,10 @@ fn mount( source: &str, destination: &str, option: Option<&str>) {
         }
     };
 
-    match sys_mount::Mount::new(source, destination, &supported, sys_mount::MountFlags::empty(), option) {
+    match sys_mount::Mount::builder()
+    .fstype(&supported)
+    .flags(sys_mount::MountFlags::empty())
+    .mount(source, destination){  
         Ok(_) => {
             helper::log_info(format!("mounted {} to {}", source, &destination).as_str() );
         }
@@ -57,7 +60,12 @@ pub(crate)  fn bind_mount(source: &str, destination: &str) {
         }
     };
 
-    match sys_mount::Mount::new(source, destination, &supported, sys_mount::MountFlags::BIND, None) {
+    //match sys_mount::Mount::new(source, destination, &supported, sys_mount::MountFlags::BIND, None) {
+    // match sys_mount::Mount::new(source, destination) {
+    match sys_mount::Mount::builder()
+    .fstype(&supported)
+    .flags(sys_mount::MountFlags::BIND)
+    .mount(source, destination){  
         Ok(_) => {
             //helper::log_info(format!("mounted {} to {}", source, &destination).as_str() );
         }
