@@ -31,14 +31,14 @@ fn main() {
    
     // Do we have a valid distro or not?
     if distro.kind == distro::DistroKind::Undefined {
-        helper::log_error("Unrecognized Linux distribution. ALAR tool is stopped\n
-                 Your OS can not be determined. The OS distros supported are:\n
-                 CentOS/Redhat 6.8 - 8.2\n
-                 Ubuntu 16.4 LTS and Ubuntu 18.4 LTS\n
+        helper::log_error("Unrecognized Linux distribution. The ALAR tool isn't able to recover it\n
+                 The OS distros supported are:\n
+                 CentOS/Redhat 6.8 - 9.x\n
+                 Ubuntu 16.4 LTS, 18 LTS, 20.04 LTS\n
                  Suse 12 and 15\n
-                 Debain 9 and 10\n
+                 Debain 9, 10, 11\n
                  ALAR will stop!\n
-                 If your OS is in the above list please report this issue at https://github.com/azure/repair-script-library/issues"
+                 If your OS is in the above list please report this issue at https://github.com/Azure/ALAR/issues"
         );
         process::exit(1);
     }
