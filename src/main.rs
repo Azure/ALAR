@@ -10,23 +10,26 @@ mod redhat;
 mod standalone;
 mod suse;
 mod ubuntu;
-
 use std::process;
-
 
 fn main() {
     // First verify we have the right amount of information to operate
     let cli_info = cli::cli();
+    
+    // are we root?
+    let euid = unsafe { nc::geteuid() };
 
-    // At first we need to verify the distro we have to work with
+    if euid != 0 {
+        println!("Please run alar as root"),
+        process::exit(1);
+    }
+
+    // Verify the distro we have to work with
     // the Distro struct does contain then all of the required information
     let distro = distro::Distro::new();
     eprintln!("{distro:?}");
-
-    
    
     // Do we have a valid distro or not?
-
     if distro.kind == distro::DistroKind::Undefined {
         helper::log_error("Unrecognized Linux distribution. ALAR tool is stopped\n
                  Your OS can not be determined. The OS distros supported are:\n
