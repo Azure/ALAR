@@ -10,6 +10,7 @@ dependencies = [
  "clap",
  "cmd_lib",
  "fs_extra",
+ "nc",
  "sys-mount",
  "uapi",
 ]
@@ -404,6 +405,15 @@ name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
+name = "nc"
+version = "0.8.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c52dfd62d0bcd77ff7b9b79f39efa17bb8a6d4b80b905193f2a5a1916e788f94"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "nom"
