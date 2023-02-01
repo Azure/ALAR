@@ -2,18 +2,16 @@ use crate::{constants, distro, helper};
 use distro::DistroKind;
 use std::io::Write;
 use std::{env, fs, io, process};
+use nc;
 
 pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> io::Result<()> {
     helper::log_info("----- Start action -----");
 
     // At first make the script executable
-    uapi::chmod(
-        format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name),
-        uapi::c::S_IXUSR | uapi::c::S_IRUSR,
-    )?;
-    //if let Err(e) = cmd_lib::run_fun!(chmod 700 /tmp/action_implementation/${action_name}-impl.sh) {
-    //    helper::log_error(format!("Setting the execute permission bit failed! {}",e).as_str());
-    //}
+    match unsafe { nc::chmod(&format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name), 0o500) } {
+        Ok(_) => {},
+        Err(e) => eprintln!("Performin chmod 500 against action: {action_name} let to an error : {e}"),
+    }
 
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}

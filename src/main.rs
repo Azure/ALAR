@@ -18,7 +18,6 @@ fn main() {
     
     // are we root?
     let euid = unsafe { nc::geteuid() };
-
     if euid != 0 {
         println!("Please run alar as root");
         process::exit(1);
