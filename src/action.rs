@@ -2,7 +2,7 @@ use crate::{constants, distro, helper};
 use distro::DistroKind;
 use std::io::Write;
 use std::{env, fs, io, process};
-use nc;
+use nc::chmod;
 
 pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> io::Result<()> {
     helper::log_info("----- Start action -----");
