@@ -22,14 +22,16 @@ OPTIONS
 use clap::{App, Arg};
 
 pub(crate) struct CliInfo {
-    pub(crate) standalone: bool,
     pub(crate) action_directory: String,
     pub(crate) actions: String,
 }
 
 impl CliInfo {
     pub(crate) fn new() -> Self {
-        Self { standalone : false, action_directory : "".to_string(), actions : "".to_string(),}
+        Self {
+            action_directory: "".to_string(),
+            actions: "".to_string(),
+        }
     }
 }
 
@@ -39,29 +41,34 @@ ALAR tries to assist with non boot able scenarios by running
 one or more different actions in order to get a VM in a running state that allows
 the administrator to further recover the VM after it is up, running and accessible again.
 ";
-   let matches = App::new("Azure Linux Auto Recover")
-                          .version(clap::crate_version!())
-                          .author("Marcus Lachmanez , malachma@microsoft.com")
-                          .about(about)
-                          .arg(Arg::with_name("directory")
-                                .short('d')
-                                .long("directory")
-                                .takes_value(true)
-                                .help("The directory in which the actions are defined.\nRequires the standalone flag")
-                           )
-                          .arg(Arg::with_name("ACTION")
-                               .help("Sets the input file to use")
-                               .required(true)
-                               .index(1))
-                          .get_matches();
+    let matches = App::new("Azure Linux Auto Recover")
+        .version(clap::crate_version!())
+        .author("Marcus Lachmanez , malachma@microsoft.com")
+        .about(about)
+        .arg(
+            Arg::with_name("directory")
+                .short('d')
+                .long("directory")
+                .takes_value(true)
+                .help(
+                    "The directory in which the actions are defined.\nRequires the standalone flag",
+                ),
+        )
+        .arg(
+            Arg::with_name("ACTION")
+                .help("Sets the input file to use")
+                .required(true)
+                .index(1),
+        )
+        .get_matches();
     let mut cli_info = CliInfo::new();
 
     // Calling .unwrap() is safe here because "ACTION" is required
-    // this is true for directory as well if flag standalone is present 
+    // this is true for directory as well if flag standalone is present
     cli_info.actions = matches.value_of("ACTION").unwrap().to_string();
     if matches.is_present("directory") {
-            cli_info.action_directory = matches.value_of("directory").unwrap().to_string();
-        }
-    
+        cli_info.action_directory = matches.value_of("directory").unwrap().to_string();
+    }
+
     cli_info
 }

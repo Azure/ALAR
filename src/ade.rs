@@ -244,21 +244,15 @@ fn fsck_partitions(distro: &distro::Distro) {
 fn umount_investigations(distro: &distro::Distro) {
     // umount EFI
     if helper::has_efi_part(distro) {
-        mount::umount(
-            constants::INVESTIGATEROOT_EFI_DIR
-        );
+        mount::umount(constants::INVESTIGATEROOT_EFI_DIR);
     }
     // umount boot
-    mount::umount(
-        constants::INVESTIGATEROOT_BOOT_DIR
-    );
+    mount::umount(constants::INVESTIGATEROOT_BOOT_DIR);
 
     // umount osencrypt
     if !distro.is_lvm {
         //  If it is LVM we have already unmounted the '/investigationroot'
-        mount::umount(
-            constants::INVESTIGATEROOT_DIR
-        );
+        mount::umount(constants::INVESTIGATEROOT_DIR);
     }
 }
 

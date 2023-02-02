@@ -30,17 +30,18 @@ pub(crate) fn verify_ubuntu(mut distro: &mut distro::Distro) {
 }
 
 pub(crate) fn do_ubuntu(mut partition_info: Vec<String>, mut distro: &mut distro::Distro) {
-   
-
     // Get the right partitions
     // Get the root partition info first
     let mut partition_info_copy = partition_info.to_owned(); // we need a copy for later usage
-    partition_info.retain(|x| !(x.contains("EF00") || x.contains("EF02")) ); //remove the UEFI and the bios_boot partition
-   
+    partition_info.retain(|x| !(x.contains("EF00") || x.contains("EF02"))); //remove the UEFI and the bios_boot partition
 
     distro.rescue_root.root_part_fs = helper::get_partition_filesystem_detail(&partition_info[0]);
     distro.rescue_root.root_part_number = helper::get_partition_number_detail(&partition_info[0]);
-    distro.rescue_root.root_part_path = format!("{}{}", helper::read_link(constants::RESCUE_DISK),distro.rescue_root.root_part_number);
+    distro.rescue_root.root_part_path = format!(
+        "{}{}",
+        helper::read_link(constants::RESCUE_DISK),
+        distro.rescue_root.root_part_number
+    );
 
     helper::log_info(&distro.rescue_root.root_part_path);
 

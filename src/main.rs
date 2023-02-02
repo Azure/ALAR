@@ -15,7 +15,7 @@ use std::process;
 fn main() {
     // First verify we have the right amount of information to operate
     let cli_info = cli::cli();
-    
+
     // are we root?
     let euid = unsafe { nc::geteuid() };
     if euid != 0 {
@@ -27,7 +27,7 @@ fn main() {
     // the Distro struct does contain then all of the required information
     let distro = distro::Distro::new();
     eprintln!("{distro:?}");
-   
+
     // Do we have a valid distro or not?
     if distro.kind == distro::DistroKind::Undefined {
         helper::log_error("Unrecognized Linux distribution. The ALAR tool isn't able to recover it\n
@@ -45,9 +45,7 @@ fn main() {
     // Prepare and mount the partitions. Take into account what distro we have to deal with
     match mount::mkdir_rescue_root() {
         Ok(_) => {}
-        Err(e) => panic!(
-            "The rescue-root dir can't be created. This is not recoverable! : {e} "
-        ),
+        Err(e) => panic!("The rescue-root dir can't be created. This is not recoverable! : {e} "),
     }
 
     // Step 2 of prepare and mount. Mount the right dirs depending on the distro determined
@@ -56,9 +54,7 @@ fn main() {
     // Get the actions
     if let Err(e) = standalone::download_action_scripts(&cli::cli()) {
         prepare_action::distro_umount(&distro);
-        panic!(
-            "action scripts are not able to be copied or downloadable : '{e}'"
-        );
+        panic!("action scripts are not able to be copied or downloadable : '{e}'");
     }
 
     // Verify we have an implementation available for the action to be executed
@@ -82,10 +78,7 @@ fn main() {
             }
             Err(e) => {
                 helper::log_error(
-                    format!(
-                        "There was an error raised while verifying the action: '{e}'"
-                    )
-                    .as_str(),
+                    format!("There was an error raised while verifying the action: '{e}'").as_str(),
                 );
                 is_action_error = true;
             }

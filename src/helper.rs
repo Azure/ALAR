@@ -87,7 +87,6 @@ pub(crate) fn get_pretty_name(path: &str) -> String {
     pretty_name
 }
 
-
 pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
     // Need to handel the condition if no filesystem is available
     // This can happen if we have a LVM partition
@@ -127,8 +126,9 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
             */
 
             if let Ok(value) = process::Command::new("xfs_repair")
-                            .args([partition_path])
-                            .output() {
+                .args([partition_path])
+                .output()
+            {
                 // unwrap should be safe here as we get a result returned
                 // xfs_repair is throwing an error, thus we need to use stderr
                 let result_value = String::from_utf8(value.stderr).unwrap();
@@ -136,8 +136,6 @@ pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
                     exit_code = Some(0);
                 }
             }
-                
-
         }
         "fat16" => {
             log_info("fsck for fat16/vfat");

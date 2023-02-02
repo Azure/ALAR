@@ -67,7 +67,7 @@ impl EfiPartition {
     }
 }
 
-#[derive(Debug, PartialEq,Default)]
+#[derive(Debug, PartialEq, Default)]
 pub enum EfiPartT {
     EfiPart(EfiPartition),
     #[default]
@@ -79,8 +79,6 @@ impl EfiPartT {
         EfiPartT::EfiPart(EfiPartition::new())
     }
 }
-
-
 
 impl BootPartDetails {
     fn new() -> Self {
@@ -140,31 +138,25 @@ impl Distro {
 }
 
 fn get_partitions(partitions: &mut Vec<String>) {
-        let link = read_link(constants::RESCUE_DISK);
-        let sedscript = r#"s|[ ]\+| |g;s|^[ \t]*||"#;
-        let out =
-            cmd_lib::run_fun!(sgdisk ${link} -p | grep -E "^ *[1,2,3,4,5,6]" | sed $sedscript);
-        // we are only interested in partitions which contain the numbers 1-6. Multiple whitespaces and trailing ones are removed
+    let link = read_link(constants::RESCUE_DISK);
+    let sedscript = r#"s|[ ]\+| |g;s|^[ \t]*||"#;
+    let out = cmd_lib::run_fun!(sgdisk ${link} -p | grep -E "^ *[1,2,3,4,5,6]" | sed $sedscript);
+    // we are only interested in partitions which contain the numbers 1-6. Multiple whitespaces and trailing ones are removed
 
-        match out {
-            Ok(v) => {
-                for line in v.lines() {
-                    // Need to check if no garbage is in it
-                    if line.contains("GiB") || line.contains("MiB") || line.contains("KiB"){
-                        partitions.push(line.to_string());
-                    }
+    match out {
+        Ok(v) => {
+            for line in v.lines() {
+                // Need to check if no garbage is in it
+                if line.contains("GiB") || line.contains("MiB") || line.contains("KiB") {
+                    partitions.push(line.to_string());
                 }
-                helper::log_info(
-                    format!(
-                        "We have the following partitions determined: {partitions:?}"               
-                    )
-                    .as_str(),
-                );
             }
-            Err(e) => panic!("Error {e:?}"),
+            helper::log_info(
+                format!("We have the following partitions determined: {partitions:?}").as_str(),
+            );
         }
-
-    
+        Err(e) => panic!("Error {e:?}"),
+    }
 }
 
 // If there is only one partition detected
@@ -284,7 +276,7 @@ fn dispatch(partition_info: Vec<String>, mut distro: &mut Distro) {
             helper::log_error("Unrecognized Linux distribution. ALAR tool is stopped\n
                  Your OS can not be determined. The OS distros supported are:\n
                  CentOS/Redhat 6.8 - 8.2\n
-                 Ubuntu 16.4 LTS and Ubuntu 18.4 LTS\n
+                 Ubuntu 16.4 LTS, Ubuntu 18.4 LTS, Ubuntu 22.04 LTS\n
                  Suse 12 and 15\n
                  Debain 9 and 10\n
                  ALAR will stop!\n

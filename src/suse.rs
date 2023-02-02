@@ -12,7 +12,7 @@ pub(crate) fn do_suse(mut partition_info: Vec<String>, mut distro: &mut distro::
 
         partition_info.retain(|x| !(x.contains("EF00") || x.contains("EF02")));
         //remove the UEFI the bios_boot partition. We have two partitions left
-        
+
         // We need to determine what part is the root and what part is the boot one.
         if let Some(root_info) = partition_info.iter().find(|x| x.contains("GiB")) {
             distro.rescue_root.root_part_fs = helper::get_partition_filesystem_detail(root_info);
@@ -48,7 +48,6 @@ pub(crate) fn do_suse(mut partition_info: Vec<String>, mut distro: &mut distro::
             helper::get_efi_part_path(distro).as_str(),
             helper::get_efi_part_fs(distro).as_str(),
         );
-        
     } else {
         // ADE part
         // Not yet available

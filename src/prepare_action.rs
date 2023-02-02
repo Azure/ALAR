@@ -164,9 +164,9 @@ pub(crate) fn redhat_umount(distro: &distro::Distro) {
 fn mount_support_filesystem() {
     match mkdir_support_filesystems() {
         Ok(()) => {}
-        Err(e) => panic!(
-            "Support Filesystems are not able to be created. This is not recoverable : {e}"
-        ),
+        Err(e) => {
+            panic!("Support Filesystems are not able to be created. This is not recoverable : {e}")
+        }
     }
     for fs in constants::SUPPORT_FILESYSTEMS.to_string().split(' ') {
         mount::bind_mount(
@@ -207,4 +207,3 @@ pub(crate) fn distro_umount(distro: &distro::Distro) {
         DistroKind::Undefined => {} // Nothing to do here we have covered this condition already
     }
 }
-

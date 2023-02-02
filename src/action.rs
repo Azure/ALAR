@@ -9,7 +9,6 @@ pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> i
     // At first make the script executable
     let file_name = format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name);
     cmd_lib::run_cmd!(chmod 500 ${file_name})?;
-    
 
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}
