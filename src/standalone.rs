@@ -32,10 +32,7 @@ pub(crate) fn download_action_scripts(cli_info: &cli::CliInfo) -> io::Result<()>
         }
 
         // Expand the action_implementation directory
-        cmd_lib::run_cmd!(
-            tar - -wildcards - -strip - component =
-                2 - xzf / tmp / alar2.tar.gz - C / tmp * action_implementation
-        )?;
+        cmd_lib::run_cmd!(tar --wildcards --strip-component=2 -xzf /tmp/alar2.tar.gz -C /tmp *action_implementation)?;
 
         Ok(())
     } else {
