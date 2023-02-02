@@ -2,16 +2,14 @@ use crate::{constants, distro, helper};
 use distro::DistroKind;
 use std::io::Write;
 use std::{env, fs, io, process};
-use nc::chmod;
 
 pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> io::Result<()> {
     helper::log_info("----- Start action -----");
 
     // At first make the script executable
-    match unsafe { nc::chmod(&format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name), 0o500) } {
-        Ok(_) => {},
-        Err(e) => eprintln!("Performin chmod 500 against action: {action_name} let to an error : {e}"),
-    }
+    let file_name = format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name);
+    cmd_lib::run_cmd!(chmod 500 ${file_name})?;
+    
 
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}
