@@ -1,3 +1,9 @@
+20023-02-07  Marcus Lachmanez  <malachma@microsoft.com>
+    * version changed to 0.4.0
+    * ALAR moved into its own repository. The old/previos location Azure/repair-script-library
+      isnt used anymore.
+    * action scripts are fetched by ALAR directly from its own ALAR repository
+    * standalone option removed. This is the default now.
 20022-02-17  Marcus Lachmanez  <malachma@microsoft.com>
     * version changed to 0.3.1
     * fixed the issue (https://github.com/Azure/repair-script-library/issues/29)
