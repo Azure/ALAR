@@ -56,10 +56,12 @@ Separate the recover operation with a comma in this case – no spaces allowed!
 
 ### Distributions supported
 * CentOS/Redhat 6.8 - 9.x
+
   **NOTE**
+
   RedHat 9.x requires to use an Ubuntu 20.04 as the recover OS. The creation of the recover VM needs to be performed in with this command
   >az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --distro ubuntu20
 * Ubuntu 16.4 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
-* Suse 12 and 1520.04 LTS, 
+* Suse 12 and 15
 * Debain 9, 10, 11
 
