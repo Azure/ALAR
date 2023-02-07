@@ -51,7 +51,7 @@ the administrator to further recover the VM after it is up, running and accessib
                 .long("directory")
                 .takes_value(true)
                 .help(
-                    "The directory in which the actions are defined.\nRequires the standalone flag",
+                    "The directory in which the actions are defined",
                 ),
         )
         .arg(
