@@ -23,7 +23,7 @@ alter_serial_properties() {
     echo "# Inserted by Azure Linux Autorecovery Tool" >> $grub_file
     echo "# -----------------------------------------" >> $grub_file
     echo "GRUB_TIMEOUT=10" >> $grub_file
-    echo 'GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0 earlyprintk=ttyS0"' >> $grub_file
+    echo 'GRUB_CMDLINE_LINUX="USE_BY_UUID_DEVICE_NAMES=1 rootdelay=300 multipath=off net.ifnames=0 console=ttyS0,115200n8 earlyprintk=ttyS0,115200 console=tty1 earlyprintk=ttyS1"' >> $grub_file
     echo 'GRUB_SERIAL_COMMAND="serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1"' >> $grub_file
     echo 'GRUB_TIMEOUT_STYLE=""' >> $grub_file
 }
@@ -48,7 +48,7 @@ GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
 GRUB_DEFAULT=saved
 GRUB_DISABLE_SUBMENU=true
 GRUB_TERMINAL="serial"
-GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0 earlyprintk=ttyS0 rootdelay=300"
+GRUB_CMDLINE_LINUX="USE_BY_UUID_DEVICE_NAMES=1 rootdelay=300 multipath=off net.ifnames=0 console=ttyS0,115200n8 earlyprintk=ttyS0,115200 console=tty1 earlyprintk=ttyS1"
 GRUB_DISABLE_RECOVERY="true"
 GRUB_SERIAL_COMMAND="serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1"
 EOF
@@ -92,7 +92,7 @@ if [[ "$isUbuntu" == "true" ]]; then
     touch $grub_file
     cat << EOF > $grub_file
 # Set the default commandline
-GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0 earlyprintk=ttyS0"
+GRUB_CMDLINE_LINUX="USE_BY_UUID_DEVICE_NAMES=1 rootdelay=300 multipath=off net.ifnames=0 console=ttyS0,115200n8 earlyprintk=ttyS0,115200 console=tty1 earlyprintk=ttyS1"
 GRUB_CMDLINE_LINUX_DEFAULT=""
 
 # Set the grub console type
