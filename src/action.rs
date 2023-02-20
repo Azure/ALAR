@@ -6,10 +6,6 @@ use std::{env, fs, io, process};
 pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> io::Result<()> {
     helper::log_info("----- Start action -----");
 
-    // At first make the script executable
-    let file_name = format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name);
-    cmd_lib::run_cmd!(chmod 500 ${file_name})?;
-
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}
         Err(e) => println!("Error in set current dir : {e}"),
@@ -55,7 +51,7 @@ pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> i
             }
             env::set_var("lvm_root_part", distro.lvm_details.lvm_root_part.as_str());
             env::set_var("lvm_usr_part", distro.lvm_details.lvm_usr_part.as_str());
-            env::set_var("lvm_lvm_part", distro.lvm_details.lvm_var_part.as_str());
+            env::set_var("lvm_var_part", distro.lvm_details.lvm_var_part.as_str());
             env::remove_var("isUbuntu");
             env::remove_var("isSuse");
             env::remove_var("isRedHat6");
@@ -73,32 +69,87 @@ pub(crate) fn run_repair_script(distro: &distro::Distro, action_name: &str) -> i
             }
             env::set_var("lvm_root_part", distro.lvm_details.lvm_root_part.as_str());
             env::set_var("lvm_usr_part", distro.lvm_details.lvm_usr_part.as_str());
-            env::set_var("lvm_lvm_part", distro.lvm_details.lvm_var_part.as_str());
+            env::set_var("lvm_var_part", distro.lvm_details.lvm_var_part.as_str());
             env::remove_var("isUbuntu");
             env::remove_var("isSuse");
         }
         DistroKind::Undefined => {} // Nothing to do
     }
-    // Execute the action script
 
-    let output = process::Command::new("chroot")
-        .arg(constants::RESCUE_ROOT)
-        .arg("/bin/bash")
-        .arg("-c")
-        .arg(format!(
-            "{}/{}-impl.sh",
-            constants::ACTION_IMPL_DIR,
-            action_name
-        ))
-        .output()?;
+    if action_name == constants::CHROOT_CLI {
+        // create a TMUX session which is used while one works directly in the chroot environment 
+        match process::Command::new("tmux")
+            .arg("new-session")
+            .arg("-d")
+            .arg("-s")
+            .arg("rescue")
+            .arg("chroot")
+            .arg(constants::RESCUE_ROOT)
+            .arg("/bin/bash")
+            .spawn()
+            .expect("chroot can not be started")
+            .wait()
+        {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        }
+        
+        // Need to prepare the environment to make chroot a bit more safer
+        match process::Command::new("tmux")
+            .arg("send-keys")
+            .arg("-t")
+            .arg("rescue")
+            .arg(format!(". {}/safe-exit.sh", constants::ACTION_IMPL_DIR))
+            .arg("Enter")
+            .spawn()
+            .expect("tmux script not run able")
+            .wait()
+        {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        }
+        
+        match process::Command::new("tmux")
+            .arg("attach")
+            .arg("-t")
+            .arg("rescue")
+            .spawn()
+            .expect("tmux attach not possible")
+            .wait()
+        {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        }
 
-    io::stdout().write_all(&output.stdout).unwrap();
+    } else {
+        // This is the normal arm to be used. Here we run the selected action 
+        // At first make the script executable
+        let file_name = format!("{}/{}-impl.sh", constants::ACTION_IMPL_DIR, action_name);
+        cmd_lib::run_cmd!(chmod 500 ${file_name})?;
+
+        let output = process::Command::new("chroot")
+            .arg(constants::RESCUE_ROOT)
+            .arg("/bin/bash")
+            .arg("-c")
+            .arg(format!(
+                "{}/{}-impl.sh",
+                constants::ACTION_IMPL_DIR,
+                action_name
+            ))
+            .output()?;
+
+        io::stdout().write_all(&output.stdout).unwrap();
+    }
     helper::log_info("----- Action stopped -----");
 
     Ok(())
 }
 
 pub(crate) fn is_action_available(action_name: &str) -> io::Result<bool> {
+    if action_name == constants::CHROOT_CLI {
+        return Ok(true);
+    }
+
     let dircontent = fs::read_dir(constants::ACTION_IMPL_DIR)?;
     let mut actions: Vec<String> = Vec::new();
     for item in dircontent {
