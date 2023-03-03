@@ -21,7 +21,7 @@ pub(crate) fn download_action_scripts(cli_info: &cli::CliInfo) -> io::Result<()>
                 "-o",
                 "/tmp/alar2.tar.gz",
                 "-L",
-                "https://github.com/Azure/ALAR/tarball/master",
+               constants::TARBALL,
             ])
             .spawn()
         {

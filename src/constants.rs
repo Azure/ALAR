@@ -15,3 +15,4 @@ pub(crate) static INVESTIGATEROOT_DIR: &str = "/investigateroot";
 pub(crate) static INVESTIGATEROOT_BOOT_DIR: &str = "/investigateroot/boot";
 pub(crate) static INVESTIGATEROOT_EFI_DIR: &str = "/investigateroot/boot/efi";
 pub(crate) static CHROOT_CLI: &str = "chroot-cli";
+pub(crate) static TARBALL: &str = "https://github.com/Azure/ALAR/tarball/master";
