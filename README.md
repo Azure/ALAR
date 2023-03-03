@@ -15,22 +15,30 @@ The most common scenarios which are covered at the moment are:
 * damaged initrd or missing initrd line in the /boot/grub/grub.cfg
 * last installed kernel is not bootable
 * serial console and grub serial are not configured well
+* GRUB/EFI installation or configuration damaged 
 
-### FSTAB
-This action does strip off any lines in the /etc/fstab file which are not needed to boot a system. It makes a copy of the original file first. So after the start of the OS the administrator is able to edit the fstab again and correct any errors which didn’t allow a reboot of the system before
+The following action names need to be be used to get a certain scenario fixed 
+### fstab
+This action does strip off any lines in the `/etc/fstab` file which are not needed to boot a system. It makes a copy of the original file first. So after the start of the OS the administrator is able to edit the fstab again and correct any errors which didn’t allow a reboot of the system before.
 
-### Kernel
+### kernel
 This action does change the default kernel.
 It modifies the configuration so that the previous kernel version gets booted. After the boot the admin is able to replace the broken kernel.
 
-### Initrd
+### initrd
 This action corrects two issues that can happen when a new kernel gets installed 
 1. The grub.cfg file is incorrect created
 2. The initrd image is missing or corrupt
 
-### Serialconsole
+### serialconsole
 This action enables both the serialconsole and the GRUB serial. Incorrect vaules get overwritten by a set of defaults
 The correct setup allows you to see the `GRUB Menu` as well get access to the system via the `Azure Serial Console`.
+
+### grubfix
+This action is reinstalling `GRUB` and regenerates the `grub.cfg` file
+
+### efifix
+This action is reinstalling the required software to boot from a `GEN2 VM`. The `grub.cfg` is regenerated as well.
 
 ### How can I recover my failed VM?
 The ALAR tool can be used [standalone](doc/standalone.md) or with the help of the `az vm repair extension` which simpplifies the creation of a recovery VM. 
@@ -59,7 +67,7 @@ Separate the recover operation with a comma in this case – no spaces allowed!
 
   **NOTE**
 
-  RedHat 9.x requires to use an Ubuntu 20.04 as the recover OS. The creation of the recover VM needs to be performed in with this command
+  RedHat 9.x requires to use an Ubuntu 20.04 as the recover OS. The creation of the recover VM needs to be performed with this command
   >az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --distro ubuntu20
 * Ubuntu 16.4 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
 * Suse 12 and 15
