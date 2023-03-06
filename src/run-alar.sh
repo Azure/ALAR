@@ -7,5 +7,5 @@ curl -s -o alar2 -L https://github.com/Azure/ALAR/releases/download/v$VERSION/al
 chmod 700 alar2
 
 # Start the recovery 
-setsid bash -c './alar2 $1 <> /dev/tty2 >&0 2>&1' 
+setsid ./alar2 $1 
 exit $?
