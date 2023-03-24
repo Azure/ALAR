@@ -19,7 +19,7 @@ alter_serial_properties() {
     # as well allow the OS to communicate with the serialconsole
     # Just simple append operations are used in this case. Which is enough to gt access to a system
     # if further adjusting is required the administrator needs to perform these steps later on after he/she got access to the system
-
+    
     echo "# Inserted by Azure Linux Autorecovery Tool" >> $grub_file
     echo "# -----------------------------------------" >> $grub_file
     echo "GRUB_TIMEOUT=10" >> $grub_file
@@ -33,15 +33,15 @@ serial_fix_suse_redhat () {
         echo "Configuring the serialconsole for RedHat 6.x is not implemented"
         exit 1
     fi
-
+    
     grub_file="/etc/default/grub"
     enable_sysreq
-
+    
     if [[ -f $grub_file ]]; then
-        alter_serial_properties 
+        alter_serial_properties
     else
-    # file does not exist
-    touch $grub_file
+        # file does not exist
+        touch $grub_file
     cat << EOF > $grub_file
 GRUB_TIMEOUT=30
 GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
@@ -55,17 +55,15 @@ EOF
     fi
     
     # update grub
-    if [[ -d /sys/firmware/efi ]]; then 
-        if [[ $isRedHat == "true" ]]; then
-            grub2-mkconfig -o /boot/efi/EFI/$(grep '^ID=' /etc/os-release | cut -d '"' -f2)/grub.cfg
-        fi    
-
-        if [[ $isSuse == "true" ]]; then
-            grub2-mkconfig -o /boot/grub2/grub.cfg
+    if [[ $isRedHat == "true" ]]; then
+        distro=$(grep '^ID=' /etc/os-release | cut -d '"' -f2)
+        if [[ ${distro} == "rhel" ]]; then
+            distro="redhat" ;
         fi
-    else
-        grub2-mkconfig -o /boot/grub2/grub.cfg
+        grub2-mkconfig -o /boot/efi/EFI/${distro}/grub.cfg
     fi
+    
+    grub2-mkconfig -o /boot/grub2/grub.cfg
 }
 
 # REDHAT/CENTOS PART
@@ -76,20 +74,20 @@ fi
 # SUSE PART
 if [[ "$isSuse" == "true" ]]; then
     serial_fix_suse_redhat
-
+    
 fi
 
 # UBUNTU PART
 if [[ "$isUbuntu" == "true" ]]; then
     grub_file="/etc/default/grub.d/50-cloudimg-settings.cfg"
     enable_sysreq
-
+    
     if [[ -f $grub_file ]]; then
         alter_serial_properties
         update-grub
     else
-    # file does not exist
-    touch $grub_file
+        # file does not exist
+        touch $grub_file
     cat << EOF > $grub_file
 # Set the default commandline
 GRUB_CMDLINE_LINUX="USE_BY_UUID_DEVICE_NAMES=1 rootdelay=300 multipath=off net.ifnames=0 console=ttyS0,115200n8 earlyprintk=ttyS0,115200 console=tty1 earlyprintk=ttyS1"
@@ -107,7 +105,7 @@ GRUB_RECORDFAIL_TIMEOUT=30
 # Wait briefly on grub prompt
 GRUB_TIMEOUT=10
 EOF
-    # update grub
-    update-grub
-    fi 
+        # update grub
+        update-grub
+    fi
 fi
