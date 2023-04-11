@@ -74,6 +74,12 @@ function check_space_for_mount() {
     else
       echo "Used space in $DIRTEST under 95% - $LOGLVUSEDPCENT% utilized"
     fi
+
+    # Clean up the temporary test mount, if we used it
+    if findmnt $AUDITTEMP; then 
+      echo "Unmounting temporary mount on $AUDITTEMP"
+      umount $AUDITTEMP
+    fi
   else 
     echo "audit log volume is not LVM, will not attempt to alter size"; 
   fi
