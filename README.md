@@ -15,7 +15,8 @@ The most common scenarios which are covered at the moment are:
 * damaged initrd or missing initrd line in the /boot/grub/grub.cfg
 * last installed kernel is not bootable
 * serial console and grub serial are not configured well
-* GRUB/EFI installation or configuration damaged 
+* GRUB/EFI installation or configuration damaged
+* Disk full causing a non-boot scenario, specifically related to auditd configurations.
 
 The following action names need to be be used to get a certain scenario fixed 
 ### fstab
@@ -40,6 +41,9 @@ This action is reinstalling `GRUB` and regenerates the `grub.cfg` file
 ### efifix
 This action is reinstalling the required software to boot from a `GEN2 VM`. The `grub.cfg` is regenerated as well.
 
+### auditd
+This action will alter the auditd configuration, replacing any HALT directives in the `/etc/audit/auditd.conf` file. Also in LVM environments, if the volume containing the audit logs is full, and free space is available in the volume group, the logical volume will be extended by 10% of the current size.
+
 ### How can I recover my failed VM?
 The ALAR tool can be used [standalone](doc/standalone.md) or with the help of the `az vm repair extension` which simpplifies the creation of a recovery VM. 
 
@@ -57,7 +61,7 @@ Separate the recover operation with a comma in this case – no spaces allowed!
 
 ### Limitations
 * Classic VMs are not supported
-* ALAR is only supported to operate on an Ubuntu 18.04 (the default) or Ubuntu 20.04
+* ALAR is only supported to utilize an Ubuntu 18.04 (the default) or Ubuntu 20.04 system as the rescue VM.
 
 ### Feature
 * Support for ADE enabled OS disks is available with the help of the [az vm repair extension](https://learn.microsoft.com/en-us/cli/azure/vm/repair?view=azure-cli-latest). Consult this [document](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/repair-linux-vm-using-azure-virtual-machine-repair-commands) for further information about its usage.
@@ -69,7 +73,7 @@ Separate the recover operation with a comma in this case – no spaces allowed!
 
   RedHat 9.x requires to use an Ubuntu 20.04 as the recover OS. The creation of the recover VM needs to be performed with this command
   >az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --distro ubuntu20
-* Ubuntu 16.4 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
+* Ubuntu 16.04 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
 * Suse 12 and 15
 * Debain 9, 10, 11
 
