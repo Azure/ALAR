@@ -3,10 +3,9 @@
 #
 
 recover_suse() {
-    kernel_version=$(sed -e "s/kernel-azure-//" <<< $(rpm -q kernel-azure --last  | head -n 1 | cut -f1 -d'|' | cut -f 1-4 -d '.'))-azure
-    # Get sure that all required modles are loaded
-    echo 'add_drivers+=" hv_vmbus hv_netvsc hv_storvsc"' >> /etc/dracut.conf
-    mkinitrd /boot/initrd-"${kernel_version}" "$kernel_version"
+    kernel_version=$(rpm -q kernel-azure --last | head -n 1 | sed s/kernel-azure-// | sed s/\.1.x86_64// | cut -f1 -d ' ')-azure
+    # Get sure that all required modules are loaded
+    dracut -f -v  --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initrd-${kernel_version} ${kernel_version}
     grub2-mkconfig -o /boot/grub2/grub.cfg
 }
 
@@ -28,7 +27,8 @@ recover_ubuntu() {
         echo "hv_netvsc" >> /etc/initramfs-tools/modules
 
     update-initramfs -k "$kernel_version" -c
-    update-grub
+    grub-mkconfig -o /boot/grub/grub.cfg
+    grub-mkconfig -o /boot/efi/EFI/ubuntu/grub.cfg
 
 }
 
@@ -37,8 +37,6 @@ recover_ubuntu() {
 #
 recover_redhat() {
     kernel_version=$(sed -e "s/kernel-//" <<< $(rpm -q kernel --last  | head -n 1 | cut -f1 -d' '))
-    # Get sure that all required modles are loaded
-    echo 'add_drivers+=" hv_vmbus hv_netvsc hv_storvsc"' >> /etc/dracut.conf
     if [[ "$isRedHat6" == "true" ]]; then
         # verify the grub.conf and correct it if needed
         cd "$tmp_dir"
@@ -46,15 +44,12 @@ recover_redhat() {
         # rebuild the initrd
         dracut -f /boot/initramfs-"${kernel_version}".img "$kernel_version"
     else
-        if [[ $(grep -qe 'VERSION_ID=\"8.\?[0-2]\?\"' /etc/os-release) -eq 0 ]]; then
-            for installed_kernel in $(rpm -qa kernel); do
-                     kernel-install add $(sed 's/kernel-//' <<< $installed_kernel) /boot/vmlinuz-$(sed 's/kernel-//' <<< $installed_kernel)
-            done
-        else
-            depmod ${kernel_version}
-            mkinitrd --force /boot/initramfs-"${kernel_version}".img "$kernel_version"
-            grub2-mkconfig -o /boot/grub2/grub.cfg
-        fi
+        depmod ${kernel_version}
+        # Get sure that all required modules are loaded
+        dracut -f -v  --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initramfs-${kernel_version}.img ${kernel_version}
+        # Recreate the the grub.cfg, it could be the initrd line is missing
+        grub2-mkconfig -o /boot/grub2/grub.cfg
+        #grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
     fi
 
 }
