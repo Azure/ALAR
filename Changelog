@@ -1,3 +1,10 @@
+2024-02-07 Marcus Lachmanez  <malachma@microsoft.com>
+    * new version 0.5.1
+    * fstab-impl got enhanced to cope with situations where boot or efi entries are missing. Or if device names are used
+      for either / /boot or /boot/efi
+2024-02-05 Marcus Lachmanez  <malachma@microsoft.com>
+    * changed fs_extra to version 1.3.0
+    * changed shlex to version 1.3.0 
 2023-03-03 Marcus Lachmanez  <malachma@microsoft.com>
     * version changed to 0.5.0
     * New actions added
