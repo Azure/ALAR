@@ -20,7 +20,11 @@ The most common scenarios which are covered at the moment are:
 
 The following action names need to be be used to get a certain scenario fixed 
 ### fstab
-This action does strip off any lines in the `/etc/fstab` file which are not needed to boot a system. It makes a copy of the original file first. So after the start of the OS the administrator is able to edit the fstab again and correct any errors which didn’t allow a reboot of the system before.
+This action does strip off any lines in the `/etc/fstab` file which are not needed to boot a system. It makes a copy of the original file first. So after the start of the OS the administrator is able to edit the fstab again and correct any errors which didn’t allow a reboot of the system before. This action provides the following additional functionality.
+-	If device names are found they get translated to an UUID identifier
+-	If '/boot' or '/boot/efi' is missed it/they get added to the fstab configuration
+-	The resource disk configuration isn’t removed
+
 
 ### kernel
 This action does change the default kernel.
