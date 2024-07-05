@@ -4,3 +4,4 @@
 # The calling process is preparing the environment accordingly
 printenv
 pwd
+pstree
