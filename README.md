@@ -1,4 +1,4 @@
-# Azure Linux Auto Recover v2
+# Azure Linux Auto Recover  REDESIGN . WORK IN PROGRESS. NOT USEABLE AT THE MOMENT!
 
 The Azure Linux Auto Recover v2 (ALAR) tool is intended to fix the most common boot issues.
 
@@ -79,5 +79,5 @@ Separate the recover operation with a comma in this case – no spaces allowed!
   >az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --distro ubuntu20
 * Ubuntu 16.04 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
 * Suse 12 and 15
-* Debain 9, 10, 11
+* Debian 9, 10, 11
 
