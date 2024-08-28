@@ -16,9 +16,8 @@ fn main() -> Result<()> {
     let mut cli_info = cli::cli();
 
     // are we root?
-    let euid = unsafe { nc::geteuid() };
-    if euid != 0 {
-        error!("Please run ALAR as root");
+    if !helper::is_root_user()? {
+        error!("ALAR must be run as root. Exiting.");
         process::exit(1);
     }
 
