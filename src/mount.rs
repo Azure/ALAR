@@ -6,6 +6,7 @@ use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
+use log::log_enabled;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -96,7 +97,7 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
         if let Ok(pfs) = distro::Distro::get_partition_filesystem(partition_path) {
             pfs
         } else {
-            error!( "Failed to get the partition filesystem. ALAR is not able to proceed further!");
+            error!("Failed to get the partition filesystem. ALAR is not able to proceed further!");
             process::exit(1);
         };
 
@@ -164,7 +165,10 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
     match exit_code {
         // error 4 is returned by fsck.ext4 only
         Some(_code @ 4) => {
-            error!("Partition {} can not be repaired in auto mode", &partition_path);
+            error!(
+                "Partition {} can not be repaired in auto mode",
+                &partition_path
+            );
             error!("Stopping ALAR");
             process::exit(1);
         }
@@ -195,7 +199,6 @@ pub(crate) fn rmdir(path: &str) -> Result<()> {
     Ok(())
 }
 
-
 pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) -> Result<()> {
     debug!("Inside importvg.");
     /*
@@ -221,15 +224,8 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
         items.insert(key, value);
     });
 
-    cmd_lib::run_cmd! {
-         pvscan;
-         vgscan --mknodes;
-         udevadm trigger;
-    }?;
-
-    let voulme_groups = cmd_lib::run_fun! {
-        vgs --noheadings -o vg_name;
-    }?;
+    helper::run_cmd("pvscan; vgscan --mknodes; udevadm trigger")?;
+    let voulme_groups = helper::run_fun("vgs --noheadings -o vg_name;")?;
 
     if voulme_groups.contains("rescuevg") {
         // If we have found the rescuevg to be available then we can skip the import
@@ -238,6 +234,7 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
 
     // Either this is a RedHat based distro where the rootvg is also in use
     // or the rootvg became activated while adding the broken disk to the recover VM
+    // some extra stuff is to be performed
     if Path::new("/dev/rootvg").is_dir() {
         let disk_path = format!(
             "{}{}",
@@ -245,25 +242,13 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
             partition_number
         );
 
-        cmd_lib::run_cmd! {
-            vgs;
-        }?;
-
-        let command = format!("vgchange -an $(pvs --noheading -o vg_name {disk_path})");
-        _ = process::Command::new("bash")
-            .arg("-c")
-            .arg(command)
-            .status()
-            .map_err(|open_error| {
-                error!("Failed to deactivate the VG on disk: {disk_path}: {open_error}");
-                open_error
-            })?;
-
-        cmd_lib::run_cmd! {
-        vgimportclone -n rescuevg ${disk_path};
-        vgchange -ay rescuevg;
-        vgscan --mknodes;
-         }?;
+        helper::run_cmd("vgs")?;
+        helper::run_cmd(&format!(
+            "vgchange -an $(pvs --noheading -o vg_name {disk_path}"
+        ))?;
+        helper::run_cmd(&format!(
+            "vgimportclone -n rescuevg {disk_path}; vgchange -ay rescuevg; vgscan --mknodes"
+        ))?;
 
         if items.contains_key("/boot/efi") {
             match umount("/boot/efi", false) {
@@ -308,19 +293,11 @@ pub(crate) fn rename_rootvg() -> Result<()> {
         .stdout;
     debug!("Old mounts: {}", String::from_utf8(old_mounts.clone())?);
 
-    if cmd_lib::run_cmd! {
-    vgrename rootvg oldvg;
-     }
-    .is_err()
-    {
+    if helper::run_cmd("vgrename rootvg oldvg").is_err() {
         error!("Failed to rename rootvg to oldvg");
     }
 
-    if cmd_lib::run_cmd! {
-    vgrename rescuevg rootvg;
-     }
-    .is_err()
-    {
+    if helper::run_cmd("vgrename rescuevg rootvg").is_err() {
         error!("Failed to rename rescuevg to rootvg");
     }
 
@@ -363,18 +340,20 @@ pub(crate) fn rename_rootvg() -> Result<()> {
         mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
     }
 
-    println!("Renaming rootvg to oldvg was successful. What abou the mounts?");
-    cmd_lib::run_cmd! {
-    lsblk;
-    }?;
-    Ok(())
+    if log::log_enabled!(log::Level::Debug) {
+        debug!("Renaming rootvg to oldvg was successful. What abou the mounts?");
+        helper::run_cmd(
+        "lsblk"
+        )?;
+    }
+        Ok(())
 }
 
 pub(crate) fn rename_oldvg() {
-    println!("Inside rename_oldvg");
-    if cmd_lib::run_cmd! {
-    vgrename oldvg rootvg;
-    }
+    debug!("Inside rename_oldvg");
+    if helper::run_cmd(
+    "vgrename oldvg rootvg"
+    )
     .is_err()
     {
         error!("Failed to rename oldvg to rootvg");
@@ -382,16 +361,11 @@ pub(crate) fn rename_oldvg() {
 }
 
 pub(crate) fn rescan_host() -> Result<()> {
-    println!("Inside rescan_host");
-    let command = "lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'";
+    debug!("Inside rescan_host");
 
-    let old_mounts = process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .output()?;
+    let old_mounts = helper::run_fun("lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'")?;
 
-    let old_mounts = String::from_utf8(old_mounts.stdout)?;
-    println!("Rescanning the host");
+    debug!("Rescanning the host");
     match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
         Ok(_) => {}
         Err(e) => {
@@ -400,15 +374,14 @@ pub(crate) fn rescan_host() -> Result<()> {
         }
     }
 
-    match cmd_lib::run_cmd! {
-    //pvscan --cache -aay;
-    udevadm trigger;
-    } {
+    match helper::run_cmd(
+    "udevadm trigger"
+     ) {
         Ok(_) => {
             println!("udevadm trigger was successful")
         }
         Err(e) => {
-            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executedSome errors got thrown: {e}");
+            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executed. Some error got thrown: {e}");
         }
     }
 
@@ -446,32 +419,22 @@ pub(crate) fn rescan_host() -> Result<()> {
         mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
     }
 
-    cmd_lib::run_cmd! {
-        lsblk
-    }?;
+    if log_enabled!(log::Level::Debug){
+        debug!("At the end of rescan_host. What about the mounts?");
+        helper::run_cmd(
+        "lsblk"
+        )?;
+}
     Ok(())
 }
 
 pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
-    println!("Inside disable_broken_disk");
+    debug!("Inside disable_broken_disk");
     let recover_disk = helper::get_recovery_disk_path(cli_info).replace("/dev/", "");
-    cmd_lib::run_cmd! {
-    vgchange -an rootvg;
-    }?;
+    helper::run_cmd(
+    "vgchange -an rootvg"
+    )?;
 
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
     Ok(())
 }
-
-/*
- Steps torename the rootvg. Delete the disk and rescan the controller
- vgrename rootvg oldvg
- vgrename rescuevg rootvg
- vgchange -an rootvg
- echo 1 > /sys/block/sdc/device/delete
- vgrename oldvg rootvg
- echo "- - -" > /sys/class/scsi_host/host1/scan;
- lsblk
- pvs
-
-*/

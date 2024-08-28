@@ -29,8 +29,8 @@ pub(crate) fn realpath(path: &str) -> Result<String> {
 pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
     let mut path_info = String::new();
     let error_condition = |e| {
-        eprintln!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
-        eprint!("Error detail: {}", e);
+        error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
+        error!("Error detail: {}", e);
         process::exit(1);
     };
 

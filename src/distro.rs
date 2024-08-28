@@ -8,9 +8,8 @@ use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
-use std::collections::HashMap;
 use std::{
-    collections, fs,
+    fs,
     path::Path,
     process::{self},
 };
@@ -41,6 +40,7 @@ pub(crate) struct DistroNameVersion {
     pub(crate) name: String,
     pub(crate) version_id: String,
 }
+
 #[derive(Debug, Default)]
 pub(crate) struct Distro {
     pub(crate) partitions: Vec<PartInfo>,
@@ -48,14 +48,15 @@ pub(crate) struct Distro {
     cli_info: CliInfo,
     pub(crate) is_ade: bool,
 }
+
 impl PartInfo {
     fn activate_is_os(&mut self) {
         self.contains_os = true;
     }
 }
+
 impl Distro {
     fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
-        const SEDSCRIPT: &str = r#"s|[ ]\+| |g;s|^[ \t]*||"#;
         let custom_disk = helper::get_recovery_disk_path(cli_info);
         let command = format!("sgdisk {custom_disk} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
         match helper::run_fun(&command) {
@@ -69,12 +70,8 @@ impl Distro {
 
     pub(crate) fn get_partition_filesystem(partition_path: &str) -> Result<String> {
         let command = format!("file -sL {}", partition_path);
-        let command_output = process::Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .output()?;
+        let command_output_string = helper::run_fun(&command)?.to_lowercase();
 
-        let command_output_string = String::from_utf8(command_output.stdout)?.to_lowercase();
         match command_output_string.as_str() {
             s if s.contains("xfs") => Ok("xfs".to_string()),
             s if s.contains("ext4") => Ok("ext4".to_string()),
@@ -150,7 +147,7 @@ impl Distro {
                 }
 
                 let lv_detail =
-                    cmd_lib::run_fun!(lsblk  -ln ${lvm_partition} -o NAME,FSTYPE | sed "1d");
+                    helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", lvm_partition));
 
                 let lv_detail_string =
                     lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
@@ -255,7 +252,7 @@ impl Distro {
                 // If the partition is marked as 'crypt?' the partition path needs to be corrected
                 "crypt?" => {
                     let partition_path = constants::ADE_OSENCRYPT_PATH;
-                    let fstype = Self::get_partition_filesystem(&partition_path)
+                    let fstype = Self::get_partition_filesystem(partition_path)
                         .unwrap_or("xfs".to_string());
                     debug!("Filesystem type for the encrypted partition is: {}", fstype);
 
@@ -348,6 +345,13 @@ impl Distro {
         // If we reach this point we haven't found the OS partition
         // which could point out to operate on a data disk.
         None
+    }
+
+    fn ade_set_no_lvm_partiton_fs(partitions: &mut [PartInfo]) {
+        // This will only affect the partitions which are marked as 'crypt?' as this is an indicator for an encrypted partition.
+        partitions.iter_mut().filter(|partition| partition.fstype == "crypt?").for_each(|part| {
+            part.fstype = Self::get_partition_filesystem(constants::ADE_OSENCRYPT_PATH).unwrap_or("xfs".to_string());
+        });
     }
 
     fn read_distro_name_version_from_lv(
@@ -474,7 +478,6 @@ impl Distro {
     fn enable_ade(
         cli_info: &mut CliInfo,
         partition_details: &mut [PartInfo],
-        alar_infobase: &mut HashMap<String, i32>,
         distro: &mut Distro,
     ) {
         match ade::prepare_ade_environment(cli_info, partition_details).is_err() {
@@ -507,7 +510,7 @@ impl Distro {
         }
     }
 
-    fn ade_prepare_lv(partition_details: &mut [PartInfo], cli_info: &CliInfo) {
+    fn ade_prepare_lv(partition_details: &mut [PartInfo],) {
         info!(
             "ADE is enabled. Collecting LV details from the ADE disk if an LVM signature is found."
         );
@@ -525,15 +528,10 @@ impl Distro {
         }
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
-        let ade_device_path = format!(
-            "{}{}",
-            helper::get_recovery_disk_path(cli_info),
-            crypt_partition.number
-        );
-        debug!("ade_device_path: {:?}", &ade_device_path);
 
         let lv_detail =
-            cmd_lib::run_fun!(lsblk  -ln ${ade_device_path} -o NAME,FSTYPE | sed "1,2d");
+            //cmd_lib::run_fun!(lsblk  -ln ${ade_device_path} -o NAME,FSTYPE | sed "1,2d");
+            helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH));
 
         let lv_detail_string =
             lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
@@ -565,7 +563,6 @@ impl Distro {
 
     pub fn new(cli_info: &mut cli::CliInfo) -> Distro {
         let mut distro = Distro::default();
-        let mut alar_infobase: HashMap<String, i32> = collections::HashMap::new();
         let mut partition_details = Self::get_partition_details(cli_info);
         debug!(
             "Partition details of the disk to be recovered: {:?}",
@@ -578,12 +575,12 @@ impl Distro {
                The ADE disk gets decrypted and if we find an LVM signature we need to import the VG.
                Also, the LV on it get determined.
             */
-            Self::enable_ade(cli_info, &mut partition_details, &mut alar_infobase, &mut distro);
-            Self::ade_prepare_lv(&mut partition_details, cli_info);
+            Self::enable_ade(cli_info, &mut partition_details,  &mut distro);
+            Self::ade_prepare_lv(&mut partition_details);
         } else {
             /*
                No encrypted disk got detected.
-               It is als orequired to determine the LVs on the disk.
+               It is also required to determine the LVs on the disk.
             */
             Self::build_logical_volume_details(&mut partition_details, cli_info);
         }
@@ -602,15 +599,8 @@ impl Distro {
                 process::exit(1);
             }
         };
-
-        /*
-        Distro {
-            partitions: partition_details,
-            distro_name_version: distro_name,
-            cli_info: cli_info.clone(),
-            is_ade: alar_infobase.get("isADE").unwrap_or(&0) == &1,
-        }
-        */
+        // Correct the filesystem for a non LVM ADE disk
+        Self::ade_set_no_lvm_partiton_fs(&mut partition_details);
 
         distro.partitions = partition_details;
         distro.distro_name_version = distro_name;

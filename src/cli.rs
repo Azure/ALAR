@@ -1,7 +1,10 @@
 
+use std::os::unix;
+
 use crate::helper;
 use clap::{App, Arg};
 use log::debug;
+use serde::de;
 
 // The Initiator type is used to determine the context in which ALAR is running
 // This information is required to be used later in a telemetry module TODO
@@ -81,7 +84,7 @@ the administrator to further recover the VM after it is up, running and accessib
     // Here the default is intentionally set to an empty string as a default value.
     cli_info.action_directory = matches.value_of("directory").unwrap_or("").to_string();
 
-    // We also set a defalt value of an empty string.
+    // We also set a defalt value for an empty string.
     cli_info.custom_recover_disk = matches
         .value_of("custom_recover_disk")
         .unwrap_or("")
@@ -92,12 +95,13 @@ the administrator to further recover the VM after it is up, running and accessib
     cli_info.initiator = if matches.contains_id("selfhelp-initiator") {
         Initiator::SelfHelp
     } else {
-        let ppid: i32 = unsafe { nc::getppid() };
-        let pprocess_name = if let Ok(ppid) = cmd_lib::run_fun!(cat /proc/${ppid}/comm) {
+        let ppid = unix::process::parent_id();
+        let pprocess_name = if let Ok(ppid) = helper::run_fun(&format!("cat /proc/{ppid}/comm")) {
             ppid
         } else {
             "no name found".to_string()
         };
+        debug!("pprocess_name is {pprocess_name}");
 
         match helper::is_repair_vm_imds() {
             Ok(true) => {

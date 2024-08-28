@@ -13,79 +13,6 @@ use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
-/*
-For an encrypted Ubuntu OS disk we get the following details when a recovery VM got created and the encrypted disk is automatically encrypted and mounted
-
-sdc
-└─sdc1        vfat   FAT32 BEK VOLUME      A0E8-7B7F                                42M     0% /mnt/azure_bek_disk
-sdd
-├─sdd1
-│ └─osencrypt ext4   1.0   cloudimg-rootfs 2d9ead34-ea62-403d-925d-84f18aac1e0c   25.4G    11% /investigateroot
-├─sdd2        ext2   1.0                   0ccce532-a3f6-4869-b4f4-8a2edf26b9b4    9.6M    91% /investigateroot/boot
-*/
-
-// The key you find in the key-vault to encrypt the disk is wrapped in a base64. So you need to decode it first via base64 -d 'the key string in base64'
-/*
-Some further details to get to the pass phrase via az CLI
-
-az keyvault secret list --vault-name ubuntu22-ade
-[
-  {
-    "attributes": {
-      "created": "2024-02-22T13:22:19+00:00",
-      "enabled": true,
-      "expires": null,
-      "notBefore": null,
-      "recoverableDays": 90,
-      "recoveryLevel": "Recoverable+Purgeable",
-      "updated": "2024-02-22T13:22:19+00:00"
-    },
-    "contentType": "BEK",
-    "id": "https://ubuntu22-ade.vault.azure.net/secrets/8dd9285a-6848-401f-a392-8194d0e91188",
-    "managed": null,
-    "name": "8dd9285a-6848-401f-a392-8194d0e91188",
-    "tags": {
-      "DiskEncryptionKeyEncryptionAlgorithm": "RSA-OAEP",
-      "DiskEncryptionKeyFileName": "LinuxPassPhraseFileName",
-      "MachineName": "ubuntu22-ade"
-    }
-  }
-]
-
-  az keyvault secret show --id https://ubuntu22-ade.vault.azure.net/secrets/8dd9285a-6848-401f-a392-8194d0e91188
-{
-  "attributes": {
-    "created": "2024-02-22T13:22:19+00:00",
-    "enabled": true,
-    "expires": null,
-    "notBefore": null,
-    "recoverableDays": 90,
-    "recoveryLevel": "Recoverable+Purgeable",
-    "updated": "2024-02-22T13:22:19+00:00"
-  },
-  "contentType": "BEK",
-  "id": "https://ubuntu22-ade.vault.azure.net/secrets/8dd9285a-6848-401f-a392-8194d0e91188/4aa928f575d843889cc4ca71018cf565",
-  "kid": null,
-  "managed": null,
-  "name": "8dd9285a-6848-401f-a392-8194d0e91188",
-  "tags": {
-    "DiskEncryptionKeyEncryptionAlgorithm": "RSA-OAEP",
-    "DiskEncryptionKeyFileName": "LinuxPassPhraseFileName",
-    "MachineName": "ubuntu22-ade"
-  },
-  "value": "UVd5eWtvK0Vnb1BIdEFBNnZyMWhDWnlkOWNncFFjL1BEYjZ2b2xFd0xLNm1YU1BYb2w2Zlcvb0N5d3ZXMW5hMldtMExDUzlRZTAvbS8yaUVoaWo1Q29LOU1mQkR1a0hnSWpBNFE5MGJZbnBROGdFNVFjVzNnS0E4TTJYUmdCTlFmNTludEs5WUFRYlQ1Q1NUanIxQytnaVRhMnVKQ0NoNWl2Q1QwLzZBK1E9PQ=="
-}
-
-The value is the base64 encoded key which you need to decode to get the pass phrase
-*/
-
-// Ideas to check whetehr we have to deal with ADE automatically mounted by creating a repair-VM
-// mountdir --> https://www.baeldung.com/linux/bash-is-directory-mounted
-// Soof interest is to know whether there exists a mountpoint for /investigateroot
-// i iti mounted we can be sure we are in an vmrepir context
-// if not the question is whether the engineer needs ADE encryption, in this case a manually encryption process as decribed above is required.
-// The password is passed over to ALAR. Option name could be 'password' for instance.
-// IF the password is passed over we can use the password to mount the disk and proceed with the recovery process. Thismounting procedure shoudl be covered in this module.
 
 enum Mountpoint {
     Mounted,
@@ -159,10 +86,7 @@ pub(crate) fn prepare_ade_environment(
  The function modify_existing_ade_setup is used when ALAR is running in a repair VM context.
  This function relies on an existent BEK partition from which the password can be read.
 */
-fn modify_existing_ade_setup(
-    partitions: &[PartInfo],
-    cli_info: &mut CliInfo,
-) -> Result<()> {
+fn modify_existing_ade_setup(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result<()> {
     mount::umount(constants::INVESTIGATEROOT_DIR, true)?;
     if has_lvm_partition(partitions) {
         process::Command::new("vgchange")
@@ -174,15 +98,12 @@ fn modify_existing_ade_setup(
         .arg("close")
         .arg("osencrypt")
         .status()?;
-    
+
     enable_encrypted_partition(cli_info, partitions)?;
     Ok(())
 }
 
-fn mount_ade_manually(
-    partitions: &[PartInfo],
-    cli_info: &mut CliInfo,
-) -> Result<()> {
+fn mount_ade_manually(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result<()> {
     info!("Mounting ADE encrypted disk manually");
     info!("Password: {}", cli_info.ade_password);
     info!("Partitions: {:#?}", partitions);
@@ -192,19 +113,21 @@ fn mount_ade_manually(
 }
 
 fn create_rescue_bek_dir() -> Result<()> {
-    Command::new("mkdir")
-        .arg("-p")
-        .arg(constants::RESCUE_BEK)
-        .status()?;
+    let command = format!("mkdir -p {}", constants::RESCUE_BEK);
+    helper::run_cmd(&command).map_err(|open_error| {
+        error!("Failed to create the BEK directory: {open_error}");
+        open_error
+    })?;
 
     Ok(())
 }
 
 fn create_rescue_bek_boot() -> Result<()> {
-    Command::new("mkdir")
-        .arg("-p")
-        .arg(constants::RESCUE_BEK_BOOT)
-        .status()?;
+    let command = format!("mkdir -p {}", constants::RESCUE_BEK_BOOT);
+    helper::run_cmd(&command).map_err(|open_error| {
+        error!("Failed to create the BEK boot directory: {open_error}");
+        open_error
+    })?;
 
     Ok(())
 }
@@ -228,7 +151,7 @@ fn find_boot_partition_number(partitions: &[PartInfo]) -> i32 {
 
 fn mount_bek_volume() -> Result<()> {
     create_rescue_bek_dir()?;
-    let bek_volume = match cmd_lib::run_fun!(blkid -t LABEL="BEK VOLUME" -o device) {
+    let bek_volume = match helper::run_fun("blkid -t LABEL='BEK VOLUME' -o device") {
         Ok(device) => device,
         Err(e) => {
             error!("There is no BEK VOLUME attached to the VM: {e}");
@@ -316,10 +239,12 @@ fn enable_encrypted_partition(
             if status.success() {
                 debug!("luksopen success");
             } else {
+                debug!("luksopen failed");
                 if cli_info.ade_password.is_empty() {
                     umount_bek_volume()?;
                 }
                 umount_boot_partition()?;
+                close_rescueencrypt()?;
                 error!("Error: Enabeling the encrypted device isn't possible. Please verify that the passphrase is correct. ALAR needs to stop.");
                 process::exit(1);
             }
@@ -347,7 +272,7 @@ fn enable_encrypted_partition(
 pub(crate) fn ade_importvg() -> Result<()> {
     debug!("Inside ade_importvg");
 
-    // Does the recover VM do use LVM as well?
+    // Does the recover VM use LVM as well?
     if Path::new("/dev/rootvg").is_dir() {
         info!("Importing the rescuevg");
 
@@ -355,28 +280,19 @@ pub(crate) fn ade_importvg() -> Result<()> {
             "vgimportclone -n rescuevg {}; vgchange -ay rescuevg;vgscan --mknodes",
             constants::ADE_OSENCRYPT_PATH
         );
-
-        process::Command::new("bash")
-            .arg("-c")
-            .arg(vgimportclone)
-            .status()
-            .map_err(|open_error| {
-                error!("Failed to import the VG: {open_error}");
-                open_error
-            })?;
+        
+        helper::run_cmd(&vgimportclone).map_err(|open_error| {
+            error!("Failed to import the VG: {open_error}");
+            open_error
+        })?;
 
         ade_rename_rootvg()?;
     } else {
         let command = "vgchange -ay rootvg;vgscan --mknodes";
-
-        process::Command::new("bash")
-            .arg("-c")
-            .arg(command)
-            .status()
-            .map_err(|open_error| {
-                error!("Failed the rootvg VG : {open_error}");
-                open_error
-            })?;
+        helper::run_cmd(command).map_err(|open_error| {
+            error!("Failed to activate the rootvg VG : {open_error}");
+            open_error
+        })?;
     };
 
     Ok(())
@@ -385,15 +301,11 @@ pub(crate) fn ade_importvg() -> Result<()> {
 pub(crate) fn ade_rename_rootvg() -> Result<()> {
     debug!("Renaming the rootvg to oldvg and the rescuevg to rootvg");
     let command = "vgrename rootvg oldvg; vgrename rescuevg rootvg";
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to rename the ADE VG: {open_error}");
+        open_error
+    })?;
 
-    process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .status()
-        .map_err(|open_error| {
-            error!("Failed to rename the ADE VG: {open_error}");
-            open_error
-        })?;
     Ok(())
 }
 
@@ -404,60 +316,22 @@ pub(crate) fn ade_lvm_cleanup() -> Result<()> {
         "vgchange -an rootvg; cryptsetup close rescueencrypt"
     };
 
-    process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .status()
-        .map_err(|open_error| {
-            error!("Failed to cleanup the ADE VG: {open_error}");
-            open_error
-        })?;
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to cleanup the ADE VG: {open_error}");
+        open_error
+    })?;
+
     Ok(())
 }
 
 pub(crate) fn close_rescueencrypt() -> Result<()> {
     let command = "cryptsetup close rescueencrypt";
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to close rescueencrypt: {open_error}");
+        open_error
+    })?;
 
-    process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .status()
-        .map_err(|open_error| {
-            error!("Failed to close rescueencrypt: {open_error}");
-            open_error
-        })?;
     Ok(())
 }
 
-/*
 
-Muss aufgesplittedwerden in eine Überprfung obe die Disk enrypted ist und ob ALAR innerhalb von 'vm repair' genutzt wird oder ob der Engineer das Passwort eingeben muss.
-Eine andere Überlegung ist ob es möglich festzustellen ob wir von einer 'vm repair' ENV aufgerufen werden.
--->  "tagsList": [
-  {
-    "name": "repair_source",
-    "value": "redhat86_rg/red86"
-  }
-],
-die tagliste kann gnutzt werden um festzustellen ob wir von einer 'vm repair' ENV aufgerufen werden.
-Die default query is : curl -s -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq
-muss fein getunt werden um zu ermitteln ob es eine 'repair_source' gibt
-
-Für telemtery könten weiter Variablen bein Aufruf von ALAR genutzt werden z.B.: initiator=SELFHELP
-
-Für die Ermittlung ob ein Passwort gestzt wure kann as über die Umbgebun ermittelt werden? Dann mus ich nicht clap befragen hierfür
-
-
-
-
- */
-
-/*
-if is_mounted {
-    do_ade_steps(false);
-    true
-} else {
-    println!("One of the partitions got identified as encrypted. If this is correct please provide the password to decrypt the disk.");
-    process::exit(1);
-}
-*/
