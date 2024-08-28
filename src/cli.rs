@@ -4,7 +4,6 @@ use std::os::unix;
 use crate::helper;
 use clap::{App, Arg};
 use log::debug;
-use serde::de;
 
 // The Initiator type is used to determine the context in which ALAR is running
 // This information is required to be used later in a telemetry module TODO
