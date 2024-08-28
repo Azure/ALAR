@@ -149,3 +149,8 @@ pub(crate) fn run_cmd(command: &str) -> Result<()> {
     }
     Ok(())
 }
+
+pub(crate) fn is_root_user() -> Result<bool> {
+    let id_value = run_fun("id -u")?;
+    Ok(id_value.trim() == "0")
+}
