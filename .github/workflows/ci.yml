@@ -1,0 +1,52 @@
+name: ALAR build
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test_x86-64:
+    name: Alar build x86-64
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - beta
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - run: cargo build --verbose
+      - run: cargo test --verbose
+      - run: cargo build --release && file target/release/alar2 && ls -lh target/release/alar2
+
+  build_and_test-aarch64:
+    name: Alar build aarch64
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - beta
+        include:
+          - arch: aarch64
+            distro: ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: uraimo/run-on-arch-action@v2
+        name: Build artifact
+        id: build
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+          run: |
+            apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl build-essential clang-15 file
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            . "$HOME/.cargo/env"
+            rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+            cargo build --verbose
+            cargo test --verbose
+            cargo build --release && file target/release/alar2 && ls -lh target/release/alar2
