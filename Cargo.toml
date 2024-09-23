@@ -18,3 +18,4 @@ serde = { version = "1.0.203", features = ["serde_derive"] }
 anyhow = "1.0.*"
 env_logger = "0.11.5"
 log = "0.4.22"
+simple-base64 = "0.23"
