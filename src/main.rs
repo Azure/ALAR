@@ -4,6 +4,7 @@ mod constants;
 mod distro;
 mod helper;
 mod mount;
+mod prepare_chroot;
 use anyhow::Result;
 use log::{debug, error, log_enabled, Level};
 use std::{env, process};
@@ -13,11 +14,11 @@ fn main() -> Result<()> {
     env_logger::init();
 
     // First verify we have the right amount of information to operate
-    let mut cli_info = cli::cli();
+    let mut cli_info = cli::cli()?;
 
     // are we root?
     if !helper::is_root_user()? {
-        error!("ALAR must be run as root. Exiting.");
+        error!("ALAR must be executed as root. Exiting.");
         process::exit(1);
     }
 
