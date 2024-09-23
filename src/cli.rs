@@ -4,6 +4,8 @@ use std::os::unix;
 use crate::helper;
 use clap::{App, Arg};
 use log::debug;
+use anyhow::Result;
+use simple_base64::decode; 
 
 // The Initiator type is used to determine the context in which ALAR is running
 // This information is required to be used later in a telemetry module TODO
@@ -34,7 +36,7 @@ impl CliInfo {
     }
 }
 
-pub(crate) fn cli() -> CliInfo {
+pub(crate) fn cli() -> Result<CliInfo> {
     let about = "
 ALAR tries to assist with non boot able scenarios by running
 one or more different actions in order to get a VM in a running state that allows
@@ -89,7 +91,10 @@ the administrator to further recover the VM after it is up, running and accessib
         .unwrap_or("")
         .to_string();
 
-    cli_info.ade_password = matches.value_of("ade_password").unwrap_or("").to_string();
+    // If the encryption key is passed over manually we can be sure it i copied out of the key-vault
+    // /the key-vault value is base64 encoded as well. Thus we need to decode it first to be able to use it to decrypt the disk.
+    let decoded_bytes  = simple_base64::decode( matches.value_of("ade_password").unwrap_or("").to_string())?;
+    cli_info.ade_password = String::from_utf8(decoded_bytes)?;
 
     cli_info.initiator = if matches.contains_id("selfhelp-initiator") {
         Initiator::SelfHelp
@@ -116,5 +121,5 @@ the administrator to further recover the VM after it is up, running and accessib
     };
 
     debug!("cli_info is {cli_info:#?}");
-    cli_info
+    Ok(cli_info)
 }
