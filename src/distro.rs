@@ -14,7 +14,7 @@ use std::{
     process::{self},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct PartInfo {
     pub(crate) number: i32,
     pub(crate) part_type: String,
@@ -29,9 +29,10 @@ pub(crate) struct LogicalVolume {
     fstype: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) enum LogicalVolumesType {
     Some(Vec<LogicalVolume>),
+    #[default]
     None,
 }
 
@@ -196,9 +197,6 @@ impl Distro {
 
             if partition.part_type == "8E00" && partition.fstype == "LVM2_member" {
                 debug!("Found LVM partition. Executing read_distro_name_version_from_lv");
-
-                //let is_ade = info_base.contains_key("isADE");
-
                 return Self::read_distro_name_version_from_lv(partition, distro.is_ade);
             }
 
