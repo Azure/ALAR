@@ -7,6 +7,7 @@ use log::debug;
 use log::error;
 use log::info;
 use log::log_enabled;
+use sys_mount::MountFlags;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -67,8 +68,8 @@ pub(crate) fn mount_path_assert(source: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn umount(destination: &str, recusrive: bool) -> Result<()> {
-    if recusrive {
+pub(crate) fn umount(destination: &str, recursive: bool) -> Result<()> {
+    if recursive {
         process::Command::new("umount")
             .arg("-R")
             .arg(destination)
@@ -244,7 +245,7 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
 
         helper::run_cmd("vgs")?;
         helper::run_cmd(&format!(
-            "vgchange -an $(pvs --noheading -o vg_name {disk_path}"
+            "vgchange -an $(pvs --noheading -o vg_name {disk_path})"
         ))?;
         helper::run_cmd(&format!(
             "vgimportclone -n rescuevg {disk_path}; vgchange -ay rescuevg; vgscan --mknodes"
@@ -436,5 +437,15 @@ pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
     )?;
 
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
+    Ok(())
+}
+pub(crate) fn bind_mount(source: &str, destination: &str) -> Result<()> {
+    let supported_fs = sys_mount::SupportedFilesystems::new()?;
+
+    sys_mount::Mount::builder()
+        .fstype(&supported_fs)
+        .flags(sys_mount::MountFlags::BIND)
+        .mount(source, destination);
+
     Ok(())
 }
