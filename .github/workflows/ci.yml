@@ -21,6 +21,7 @@ jobs:
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: cargo build --verbose
       - run: cargo test --verbose
+      - run: cargo check
       - run: cargo build --release && file target/release/alar2 && ls -lh target/release/alar2
 
   build_and_test-aarch64:
@@ -49,4 +50,5 @@ jobs:
             rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
             cargo build --verbose
             cargo test --verbose
+            cargo check
             cargo build --release && file target/release/alar2 && ls -lh target/release/alar2
