@@ -5,7 +5,9 @@ authors = ["malachma <malachma@microsoft.com>"]
 edition = "2021"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "distro"
+
 
 [dependencies]
 chrono = "0.4.*"
