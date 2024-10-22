@@ -74,6 +74,9 @@ boot_efi_mnt() {
 
     # The resource-disk we include in this function as well
     awk '/\/dev\/disk\/cloud\/azure_resource-part1/ {print}' ${fstab_org} >>/etc/fstab
+
+    # Keep the BEK disk as well if available
+    awk '/LABEL=BEK/ {print}' ${fstab_org} >>/etc/fstab
 }
 
 if [[ ${isLVM} != "true" ]]; then
