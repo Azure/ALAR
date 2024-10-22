@@ -81,7 +81,7 @@ boot_efi_mnt() {
 
 if [[ ${isLVM} != "true" ]]; then
     fstab_root=$(awk '/[[:space:]]+\/[[:space:]]+/ {print}' ${fstab_org}) 
-    if [[ "$fstab_root" =~ ^[[:space:]]*UUID.*  ]]; then
+    if [[ "$fstab_root" =~ ^[[:space:]]*.*UUID.*  ]]; then
         echo "$fstab_root" >> /etc/fstab
     else
         fstab_root_dev=$(awk '{print $1}'<<< "$fstab_root")
