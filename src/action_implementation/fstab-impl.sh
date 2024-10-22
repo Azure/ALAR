@@ -32,6 +32,7 @@ boot_efi_mnt() {
     fstab_boot=$(awk '/[[:space:]]+\/boot[[:space:]]+/ {print}' ${fstab_org})
     # Non every distro has /boot on a seperate disk/partition
     # Hence let us verify this before performing any unnecessary modification
+    boot_part_path=$(grep "/boot" /etc/mtab | grep -v efi | cut -d" " -f1)
     if [[ -n ${fstab_boot} ]]; then 
         # A mount entry for boot is defiend is it UUID based?
         if [[ "$fstab_boot" =~ ^[[:space:]]*UUID.*  ]]; then
@@ -40,7 +41,6 @@ boot_efi_mnt() {
             # It is device name based, let us convert it to UUID based
             fstab_boot_dev=$(awk '{print $1}'<<< "$fstab_boot")
             #fstab_boot_uuid=$(blkid -o value -s UUID $(awk '{print $1}'<<< "$fstab_boot"))
-            # Variable boot_part_path is set by ALAR
             fstab_boot_uuid=$(blkid -o value -s UUID ${boot_part_path})
             sed "s|$fstab_boot_dev|UUID=$fstab_boot_uuid|" <<< $fstab_boot >> /etc/fstab
         fi
@@ -54,13 +54,13 @@ boot_efi_mnt() {
 
 
     fstab_efi=$(awk '/[[:space:]]+\/boot\/efi[[:space:]]+/ {print}' ${fstab_org})
+    efi_part_path=$(grep efi /etc/mtab | cut -d" " -f1)
     if [[  -n ${fstab_efi} ]]; then 
 
         if [[ "$fstab_efi" =~ ^[[:space:]]*UUID.*  ]]; then
             echo "$fstab_efi" >> /etc/fstab
         else
             fstab_efi_dev=$(awk '{print $1}'<<< "$fstab_efi")
-            # Variable efi_part_path is set by ALAR
             fstab_efi_uuid=$(blkid -o value -s UUID ${efi_part_path})
             sed "s|$fstab_efi_dev|UUID=$fstab_efi_uuid|" <<< $fstab_efi >> /etc/fstab
         fi
