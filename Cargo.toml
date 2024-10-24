@@ -1,6 +1,6 @@
 [package]
-name = "alar2"
-version = "0.5.1"
+name = "alar"
+version = "0.7.0"
 authors = ["malachma <malachma@microsoft.com>"]
 edition = "2021"
 license = "MIT"
