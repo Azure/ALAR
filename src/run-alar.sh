@@ -8,14 +8,14 @@ VERSION=$(curl -s -L https://raw.githubusercontent.com/Azure/ALAR/main/Cargo.tom
 ARCH=$(uname -m)
 
 if [[ ${ARCH} == "aarch64" ]]; then
-        curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar2-aarch64
+        curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar-aarch64
         chmod 700 alar
 
         # Start the recovery
         ./alar2 $1
         exit $?
 else
-        curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar2
+        curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar
         chmod 700 alar
 
         # Start the recovery
