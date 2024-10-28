@@ -21,3 +21,4 @@ a system being recovered from an existing VM.
 - The action scripts are part of the binary build. It is not required to get the downloaded from the GIT repository.
   This may be of help for those conditions where access to the Internet isn't permitted. But if required it is possible
   to download them with the help of the new option '--download-action-scripts'. This may be handy if there is a new bug fix available in the repo but no new build got generated.
+- Logging functionality added. Use RUST_LOG = debug|error|info
