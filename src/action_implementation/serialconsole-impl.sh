@@ -56,7 +56,7 @@ EOF
     
     # update grub
     if [[ $isRedHat == "true" ]]; then
-        distro=$(grep '^ID=' /etc/os-release | cut -d '"' -f2)
+        distro=$(grep '^ID=' /etc/os-release | cut -d '=' -f2 | cut -d'"' -f2)
         if [[ ${distro} == "rhel" ]]; then
             distro="redhat" ;
         fi

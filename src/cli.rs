@@ -70,7 +70,7 @@ the administrator to further recover the VM after it is up, running and accessib
         .arg(
             Arg::with_name("SELFHELP")
                 .long("SELFHELP")
-                .takes_value(true)
+                .takes_value(false)
                 .index(2),
         )
         .arg(

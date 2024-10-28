@@ -35,7 +35,7 @@ boot_efi_mnt() {
     boot_part_path=$(grep "/boot" /etc/mtab | grep -v efi | cut -d" " -f1)
     if [[ -n ${fstab_boot} ]]; then 
         # A mount entry for boot is defiend is it UUID based?
-        if [[ "$fstab_boot" =~ ^[[:space:]]*UUID.*  ]]; then
+        if [[ "$fstab_boot" =~ ^[[:space:]]*.*UUID.*  ]]; then
             echo "$fstab_boot" >> /etc/fstab
         else
             # It is device name based, let us convert it to UUID based
@@ -57,7 +57,7 @@ boot_efi_mnt() {
     efi_part_path=$(grep efi /etc/mtab | cut -d" " -f1)
     if [[  -n ${fstab_efi} ]]; then 
 
-        if [[ "$fstab_efi" =~ ^[[:space:]]*UUID.*  ]]; then
+        if [[ "$fstab_efi" =~ ^[[:space:]]*.*UUID.*  ]]; then
             echo "$fstab_efi" >> /etc/fstab
         else
             fstab_efi_dev=$(awk '{print $1}'<<< "$fstab_efi")
