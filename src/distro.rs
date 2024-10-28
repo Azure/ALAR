@@ -8,6 +8,7 @@ use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
+use std::fmt::Display;
 use std::{
     fs,
     path::Path,
@@ -25,8 +26,8 @@ pub(crate) struct PartInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LogicalVolume {
-    name: String,
-    fstype: String,
+    pub(crate) name: String,
+    pub(crate) fstype: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -48,6 +49,67 @@ pub(crate) struct Distro {
     pub(crate) distro_name_version: DistroNameVersion,
     cli_info: CliInfo,
     pub(crate) is_ade: bool,
+    pub(crate) is_lvm: bool,
+    architecture: Architecture,
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub enum DistroType {
+    Debian,
+    Suse,
+    RedHat,
+    Ubuntu,
+    AzureLinux,
+    #[default]
+    Undefined,
+}
+
+#[derive(Debug, Default)]
+enum Architecture {
+    #[default]
+    X86_64,
+    Aarch64,
+}
+
+impl Display for DistroType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DistroType::Debian => write!(f, "Debian"),
+            DistroType::Suse => write!(f, "Suse"),
+            DistroType::RedHat => write!(f, "RedHat"),
+            DistroType::Ubuntu => write!(f, "Ubuntu"),
+            DistroType::AzureLinux => write!(f, "AzureLinux"),
+            DistroType::Undefined => write!(f, "Undefined"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub enum DistroSubType {
+    CentOS,
+    AlmaLinux,
+    RockyLinux,
+    OracleLinux,
+    #[default]
+    None,
+}
+
+impl Display for DistroSubType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DistroSubType::CentOS => write!(f, "CentOS"),
+            DistroSubType::AlmaLinux => write!(f, "AlmaLinux"),
+            DistroSubType::RockyLinux => write!(f, "RockyLinux"),
+            DistroSubType::OracleLinux => write!(f, "OracleLinux"),
+            DistroSubType::None => write!(f, "None"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq,)]
+pub(crate) struct DistroKind {
+    pub(crate) distro_type: DistroType,
+    pub(crate) distro_subtype: DistroSubType,
 }
 
 impl PartInfo {
@@ -76,6 +138,8 @@ impl Distro {
         match command_output_string.as_str() {
             s if s.contains("xfs") => Ok("xfs".to_string()),
             s if s.contains("ext4") => Ok("ext4".to_string()),
+            s if s.contains("ext2") => Ok("ext2".to_string()),
+            s if s.contains("ext3") => Ok("ext3".to_string()),
             s if s.contains("lvm2") => Ok("LVM2_member".to_string()),
             s if s.contains("btrfs") => Ok("btrfs".to_string()),
             s if s.contains("zfs") => Ok("zfs".to_string()),
@@ -121,7 +185,7 @@ impl Distro {
         parts
     }
 
-    fn build_logical_volume_details(part: &mut [PartInfo], cli_info: &CliInfo) {
+    fn build_logical_volume_details(part: &mut [PartInfo], cli_info: &CliInfo, distro: &mut Distro) {
         let mut lv: Vec<LogicalVolume> = Vec::new();
 
         part.iter_mut()
@@ -167,6 +231,7 @@ impl Distro {
                     });
                 }
                 part.logical_volumes = LogicalVolumesType::Some(lv.clone());
+                distro.is_lvm = true;
             });
     }
 
@@ -177,7 +242,7 @@ impl Distro {
     fn what_distro_name_version(
         partitions: &mut Vec<PartInfo>,
         cli_info: &CliInfo,
-        distro: &Distro,
+        distro: &mut Distro,
     ) -> Option<DistroNameVersion> {
         let recovery_disk_path = helper::get_recovery_disk_path(cli_info);
 
@@ -312,6 +377,22 @@ impl Distro {
                             .replace('"', "");
                     }
                 }
+
+                // What is the architecture of the system to be recovered?
+                let file_bash_info = match helper::run_fun("file /tmp/assert/bin/bash") {
+                    Ok(info) => info,
+                    Err(e) => {
+                        error!("Error getting bash info: {e}");
+                        "".to_string()
+                    }
+                };
+
+                if file_bash_info.contains("aarch64") {
+                    distro.architecture = Architecture::Aarch64;
+                } else {
+                    distro.architecture = Architecture::X86_64;
+                }
+
                 match mount::umount(constants::ASSERT_PATH, false) {
                     Ok(_) => {}
                     Err(e) => error_condition_umount(e),
@@ -379,7 +460,7 @@ impl Distro {
                     let partition_path = if is_ade {
                         constants::RESCUE_ADE_ROOTLV
                     } else {
-                        constants::RESCUEVG_ROOTLV
+                        constants::ROOTVG_ROOTLV
                     };
 
                     match mount::fsck_partition(partition_path) {
@@ -407,7 +488,7 @@ impl Distro {
                     let partition_path = if is_ade  {
                         constants::RESCUE_ADE_USRLV
                     } else {
-                        constants::RESCUEVG_USRLV
+                        constants::ROOTVG_USRLV
                     };
 
                     match mount::fsck_partition(partition_path) {
@@ -484,7 +565,8 @@ impl Distro {
                 process::exit(1);
             }
             false => {
-                //alar_infobase.insert("isADE".to_string(), 1);
+                // No error arm
+
                 distro.set_is_ade(true);
                 // if the crypt partition contains a LVM signature we need to import the volumegroup
                 partition_details
@@ -508,7 +590,7 @@ impl Distro {
         }
     }
 
-    fn ade_prepare_lv(partition_details: &mut [PartInfo],) {
+    fn ade_prepare_lv(partition_details: &mut [PartInfo], distro: &mut Distro) {
         info!(
             "ADE is enabled. Collecting LV details from the ADE disk if an LVM signature is found."
         );
@@ -523,12 +605,12 @@ impl Distro {
             return;
         } else {
             crypt_partition.fstype = "LVM2_member".to_string();
+            distro.is_lvm = true;
         }
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
 
         let lv_detail =
-            //cmd_lib::run_fun!(lsblk  -ln ${ade_device_path} -o NAME,FSTYPE | sed "1,2d");
             helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH));
 
         let lv_detail_string =
@@ -574,19 +656,19 @@ impl Distro {
                Also, the LV on it get determined.
             */
             Self::enable_ade(cli_info, &mut partition_details,  &mut distro);
-            Self::ade_prepare_lv(&mut partition_details);
+            Self::ade_prepare_lv(&mut partition_details, &mut distro);
         } else {
             /*
                No encrypted disk got detected.
                It is also required to determine the LVs on the disk.
             */
-            Self::build_logical_volume_details(&mut partition_details, cli_info);
+            Self::build_logical_volume_details(&mut partition_details, cli_info, &mut distro);
         }
 
         let distro_name = match Self::what_distro_name_version(
             &mut partition_details,
             cli_info,
-            &distro,
+            &mut distro,
         ) {
             Some(distro_name) => distro_name,
             None => {

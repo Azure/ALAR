@@ -63,21 +63,9 @@ Either a single recover-operation or multiple operations, i.e., fstab; ‘fstab,
 **NOTE**
 Separate the recover operation with a comma in this case – no spaces allowed!
 
-### Limitations
-* Classic VMs are not supported
-* ALAR is only supported to utilize an Ubuntu 18.04 (the default) or Ubuntu 20.04 system as the rescue VM.
-
-### Feature
-* Support for ADE enabled OS disks is available with the help of the [az vm repair extension](https://learn.microsoft.com/en-us/cli/azure/vm/repair?view=azure-cli-latest). Consult this [document](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/repair-linux-vm-using-azure-virtual-machine-repair-commands) for further information about its usage.
-
-### Distributions supported
-* CentOS/Redhat 6.8 - 9.x
-
-  **NOTE**
-
-  RedHat 9.x requires to use an Ubuntu 20.04 as the recover OS. The creation of the recover VM needs to be performed with this command
-  >az vm repair create --verbose -g centos7 -n cent7 --repair-username rescue --repair-password 'password!234’ --distro ubuntu20
-* Ubuntu 16.04 LTS, 18.04 LTS, 20.04 LTS, 22.04 LTS
-* Suse 12 and 15
-* Debian 9, 10, 11
-
+## LICENSE
+Licensed under either of
+* Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)

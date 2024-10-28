@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::path::Path;
 use std::process;
@@ -82,6 +83,7 @@ pub(crate) fn prepare_ade_environment(
         }
     }
 }
+
 /**
  The function modify_existing_ade_setup is used when ALAR is running in a repair VM context.
  This function relies on an existent BEK partition from which the password can be read.
@@ -105,7 +107,6 @@ fn modify_existing_ade_setup(partitions: &[PartInfo], cli_info: &mut CliInfo) ->
 
 fn mount_ade_manually(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result<()> {
     info!("Mounting ADE encrypted disk manually");
-    info!("Password: {}", cli_info.ade_password);
     info!("Partitions: {:#?}", partitions);
 
     enable_encrypted_partition(cli_info, partitions)?;
@@ -152,16 +153,26 @@ fn find_boot_partition_number(partitions: &[PartInfo]) -> i32 {
 fn mount_bek_volume() -> Result<()> {
     create_rescue_bek_dir()?;
     let bek_volume = match helper::run_fun("blkid -t LABEL='BEK VOLUME' -o device") {
-        Ok(device) => device,
+        Ok(device) => {
+            debug!("BEK volume details: {device}");
+            device
+        }
         Err(e) => {
-            error!("There is no BEK VOLUME attached to the VM: {e}");
-            error!("Please get the password manually and run ALAR with the option :  --ade-password <password>");
+            error!("blkid raised an error : {e}");
+            error!("Please set the password manually and run ALAR with the option :  --ade-password <password>");
             process::exit(1);
         }
     };
+    if bek_volume.is_empty() {
+        error!("There is no BEK VOLUME attached to the VM");
+        error!("Please get the password manually and run ALAR with the option :  --ade-password <password>");
+        process::exit(1);
+    };
+
     mount::mount(bek_volume.trim(), constants::RESCUE_BEK, "", false)?;
     if !Path::new(constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME).exists() {
         error!("The pass phrase file doesn't exist. Please restart the VM to get the file LinuxPassPhraseFileName automatically created.");
+        mount::umount(constants::RESCUE_BEK, false)?;
         process::exit(1);
     }
     Ok(())
@@ -208,30 +219,29 @@ fn enable_encrypted_partition(
 ) -> Result<()> {
     let partition_path = helper::get_recovery_disk_path(cli_info);
     let root_partiton_number = find_root_partition_number(partitions);
-    let mut command = "".to_string();
 
-    if cli_info.ade_password.is_empty() {
+    let command: String = if cli_info.ade_password.is_empty() {
         // we verified earlier that the BEK does exists and is readable
         mount_bek_volume()?;
         mount_boot_partition(cli_info, partitions)?;
-        command = format!(
+        format!(
             "cryptsetup luksOpen --key-file {} --header {}/luks/osluksheader {}{} rescueencrypt",
             constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME,
             constants::RESCUE_BEK_BOOT,
             partition_path,
             root_partiton_number
-        );
+        )
     } else {
         create_pass_phrase_file(&cli_info.ade_password)?;
         mount_boot_partition(cli_info, partitions)?;
-        command = format!(
+        format!(
             "cryptsetup luksOpen --key-file {} --header {}/luks/osluksheader {}{} rescueencrypt",
             constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME,
             constants::RESCUE_BEK_BOOT,
             partition_path,
             root_partiton_number
-        );
-    }
+        )
+    };
 
     match process::Command::new("sh").arg("-c").arg(&command).status() {
         Ok(status) => {
@@ -280,7 +290,7 @@ pub(crate) fn ade_importvg() -> Result<()> {
             "vgimportclone -n rescuevg {}; vgchange -ay rescuevg;vgscan --mknodes",
             constants::ADE_OSENCRYPT_PATH
         );
-        
+
         helper::run_cmd(&vgimportclone).map_err(|open_error| {
             error!("Failed to import the VG: {open_error}");
             open_error
@@ -325,6 +335,13 @@ pub(crate) fn ade_lvm_cleanup() -> Result<()> {
 }
 
 pub(crate) fn close_rescueencrypt() -> Result<()> {
+    // Get out of constants::RESCUE_ROOT, otherwise umount isn't possible for RESCUE_ROOT
+    match env::set_current_dir("/") {
+        Ok(_) => {}
+        Err(e) => println!("Error in set current dir : {e}"),
+    }
+
+    //mount::umount(constants::RESCUE_ROOT, true)?;
     let command = "cryptsetup close rescueencrypt";
     helper::run_cmd(command).map_err(|open_error| {
         error!("Failed to close rescueencrypt: {open_error}");
@@ -333,5 +350,3 @@ pub(crate) fn close_rescueencrypt() -> Result<()> {
 
     Ok(())
 }
-
-

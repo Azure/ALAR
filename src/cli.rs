@@ -1,11 +1,7 @@
-
-use std::os::unix;
-
 use crate::helper;
 use clap::{App, Arg};
-use log::debug;
+use log::{debug, info};
 use anyhow::Result;
-use simple_base64::decode; 
 
 // The Initiator type is used to determine the context in which ALAR is running
 // This information is required to be used later in a telemetry module TODO
@@ -18,11 +14,12 @@ pub(crate) enum Initiator {
 }
 #[derive(Default, Debug, Clone)]
 pub(crate) struct CliInfo {
-    pub(crate) action_directory: String,
+    pub(crate) local_action_directory: String,
     pub(crate) actions: String,
     pub(crate) initiator: Initiator,
     pub(crate) custom_recover_disk: String,
     pub(crate) ade_password: String,
+    pub(crate) download_action_scripts: bool,
 }
 impl CliInfo {
     pub(crate) fn new() -> CliInfo {
@@ -54,8 +51,14 @@ the administrator to further recover the VM after it is up, running and accessib
                 .help("The directory in which custom actions are defined"),
         )
         .arg(
+            Arg::with_name("download action scripts")
+                .long("download-action-scripts")
+                .takes_value(false)
+                .help("Use this flag to download the action scripts from GIT instead of the builtin ones"),
+        )
+        .arg(
             Arg::with_name("ACTION")
-                .help("A required paramter that defines the action to be executed. Multiple actions can be seperated by a comma")
+                .help("A required parameter that defines the action to be executed. Multiple actions can be seperated by a comma")
                 .required(true)
                 .index(1),
         )
@@ -63,6 +66,12 @@ the administrator to further recover the VM after it is up, running and accessib
             Arg::with_name("selfhelp-initiator")
                 .long("selfhelp-initiator")
                 .takes_value(false),
+        )
+        .arg(
+            Arg::with_name("SELFHELP")
+                .long("SELFHELP")
+                .takes_value(true)
+                .index(2),
         )
         .arg(
             Arg::with_name("custom_recover_disk")
@@ -83,7 +92,7 @@ the administrator to further recover the VM after it is up, running and accessib
     cli_info.actions = matches.value_of("ACTION").unwrap_or("fstab").to_string();
 
     // Here the default is intentionally set to an empty string as a default value.
-    cli_info.action_directory = matches.value_of("directory").unwrap_or("").to_string();
+    cli_info.local_action_directory = matches.value_of("directory").unwrap_or("").to_string();
 
     // We also set a defalt value for an empty string.
     cli_info.custom_recover_disk = matches
@@ -91,25 +100,23 @@ the administrator to further recover the VM after it is up, running and accessib
         .unwrap_or("")
         .to_string();
 
-    // If the encryption key is passed over manually we can be sure it i copied out of the key-vault
+    // If the encryption key is passed over manually we can be sure it is copied out of the key-vault
     // /the key-vault value is base64 encoded as well. Thus we need to decode it first to be able to use it to decrypt the disk.
-    let decoded_bytes  = simple_base64::decode( matches.value_of("ade_password").unwrap_or("").to_string())?;
+    let decoded_bytes  = simple_base64::decode( matches.value_of("ade_password").unwrap_or(""))?;
     cli_info.ade_password = String::from_utf8(decoded_bytes)?;
 
-    cli_info.initiator = if matches.contains_id("selfhelp-initiator") {
+    cli_info.download_action_scripts = matches.is_present("download action scripts");
+
+    // selfhelp-inititiaor and initiator serve the same purpose, initiator is the paramter passed over from the Portal SelfHelp framework
+    cli_info.initiator = if matches.contains_id("selfhelp-initiator") || matches.value_of("SELFHELP").unwrap_or("").to_ascii_lowercase() == "selfhelp" {
         Initiator::SelfHelp
     } else {
-        let ppid = unix::process::parent_id();
-        let pprocess_name = if let Ok(ppid) = helper::run_fun(&format!("cat /proc/{ppid}/comm")) {
-            ppid
-        } else {
-            "no name found".to_string()
-        };
-        debug!("pprocess_name is {pprocess_name}");
+        let pstree_text = helper::run_fun("pstree | grep run-command-ext")?;
+        debug!("pstree information: {}", &pstree_text);
 
         match helper::is_repair_vm_imds() {
             Ok(true) => {
-                if pprocess_name.contains("run-alar.sh") {
+                if pstree_text.contains("run-command-ext")  {
                     Initiator::RecoverVm
                 } else {
                     Initiator::Cli
@@ -120,6 +127,6 @@ the administrator to further recover the VM after it is up, running and accessib
         }
     };
 
-    debug!("cli_info is {cli_info:#?}");
+    info!("cli_info is {cli_info:#?}");
     Ok(cli_info)
 }

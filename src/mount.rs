@@ -7,7 +7,6 @@ use log::debug;
 use log::error;
 use log::info;
 use log::log_enabled;
-use sys_mount::MountFlags;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -60,11 +59,6 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
             mount_error
         })?;
 
-    Ok(())
-}
-
-pub(crate) fn mount_path_assert(source: &str) -> Result<()> {
-    mount(source, constants::ASSERT_PATH, "", false)?;
     Ok(())
 }
 
@@ -225,11 +219,12 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
         items.insert(key, value);
     });
 
-    helper::run_cmd("pvscan; vgscan --mknodes; udevadm trigger")?;
+    //helper::run_cmd("pvscan; vgscan --mknodes; udevadm trigger")?;
+    helper::run_cmd("pvscan;")?;
     let voulme_groups = helper::run_fun("vgs --noheadings -o vg_name;")?;
 
+    // If we have found the rescuevg to be available then we can skip the import
     if voulme_groups.contains("rescuevg") {
-        // If we have found the rescuevg to be available then we can skip the import
         return Ok(());
     }
 
@@ -237,126 +232,73 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
     // or the rootvg became activated while adding the broken disk to the recover VM
     // some extra stuff is to be performed
     if Path::new("/dev/rootvg").is_dir() {
-        let disk_path = format!(
-            "{}{}",
-            helper::get_recovery_disk_path(cli_info),
-            partition_number
-        );
+        // Let us figure out whether there are more than two rootvg's
+        // If there are more than two rootvg's we need to do the import
+        let result_string = helper::run_fun(r"pvscan  2>&1 | grep -v 'WARNING\|duplicate\|Total'")?;
+        let mut rootvg_count = 0;
 
-        helper::run_cmd("vgs")?;
-        helper::run_cmd(&format!(
-            "vgchange -an $(pvs --noheading -o vg_name {disk_path})"
-        ))?;
-        helper::run_cmd(&format!(
-            "vgimportclone -n rescuevg {disk_path}; vgchange -ay rescuevg; vgscan --mknodes"
-        ))?;
+        result_string.lines().for_each(|line| {
+            if line.contains("rootvg") {
+                rootvg_count += 1;
+            }
+        });
 
-        if items.contains_key("/boot/efi") {
-            match umount("/boot/efi", false) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error umount /boot/efi : {e}");
+        debug!("Number of rootvg's found: {rootvg_count}");
+
+        if rootvg_count == 1 {
+            debug!("Only one rootvg found. Skipping the import.");
+            Ok(())
+        } else {
+        debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
+            let disk_path = format!(
+                "{}{}",
+                helper::get_recovery_disk_path(cli_info),
+                partition_number
+            );
+
+            helper::run_cmd(&format!(
+                "vgimportclone -n rescuevg {disk_path}; vgscan --mknodes"
+            ))?;
+
+            helper::run_cmd("vgrename rootvg oldvg; vgrename rescuevg rootvg; vgchange -ay")?;
+
+            if items.contains_key("/boot/efi") {
+                match umount("/boot/efi", false) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Error umount /boot/efi : {e}");
+                    }
                 }
             }
-        }
 
-        if items.contains_key("/boot") {
-            match umount("/boot", false) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error umount /boot : {e}");
+            if items.contains_key("/boot") {
+                match umount("/boot", false) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Error umount /boot : {e}");
+                    }
                 }
             }
-        }
 
-        if let Some(device_boot) = items.get("/boot") {
-            mount(&format!("/dev/{device_boot}"), "/boot", "", false)?;
-        }
+            if let Some(device_boot) = items.get("/boot") {
+                mount(&format!("/dev/{device_boot}"), "/boot", "", false)?;
+            }
 
-        if let Some(device_efi) = items.get("/boot/efi") {
-            mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
-        }
+            if let Some(device_efi) = items.get("/boot/efi") {
+                mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
+            }
 
-        Ok(())
+            Ok(())
+        }
     } else {
+        // No import is necessary
         Ok(())
     }
-}
-
-pub(crate) fn rename_rootvg() -> Result<()> {
-    println!("Inside rename_rootvg");
-    let command = "lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'";
-
-    let old_mounts = process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .output()?
-        .stdout;
-    debug!("Old mounts: {}", String::from_utf8(old_mounts.clone())?);
-
-    if helper::run_cmd("vgrename rootvg oldvg").is_err() {
-        error!("Failed to rename rootvg to oldvg");
-    }
-
-    if helper::run_cmd("vgrename rescuevg rootvg").is_err() {
-        error!("Failed to rename rescuevg to rootvg");
-    }
-
-    let mut items: HashMap<&str, &str> = HashMap::new();
-    let old_mount_lines = String::from_utf8(old_mounts)?;
-    old_mount_lines.lines().for_each(|line| {
-        let mut parts = line.split(':');
-        let value = parts.next().unwrap();
-        let key = parts.next().unwrap();
-        items.insert(key, value);
-    });
-
-    // The rescan has the side effect that the boot and efi partitions get automatically mounted
-    // But as the UUIDs are the same they are mounted to the recover disk
-    // This is why we need to unmount them and remount them to the correct location
-
-    if items.contains_key("/boot/efi") {
-        match umount("/boot/efi", false) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error umount /boot/efi : {e}");
-            }
-        }
-    }
-
-    if items.contains_key("/boot") {
-        match umount("/boot", false) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error umount /boot : {e}");
-            }
-        }
-    }
-
-    if let Some(device_boot) = items.get("/boot") {
-        mount(&format!("/dev/{device_boot}"), "/boot", "", false)?;
-    }
-
-    if let Some(device_efi) = items.get("/boot/efi") {
-        mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
-    }
-
-    if log::log_enabled!(log::Level::Debug) {
-        debug!("Renaming rootvg to oldvg was successful. What abou the mounts?");
-        helper::run_cmd(
-        "lsblk"
-        )?;
-    }
-        Ok(())
 }
 
 pub(crate) fn rename_oldvg() {
     debug!("Inside rename_oldvg");
-    if helper::run_cmd(
-    "vgrename oldvg rootvg"
-    )
-    .is_err()
-    {
+    if helper::run_cmd("vgrename oldvg rootvg").is_err() {
         error!("Failed to rename oldvg to rootvg");
     }
 }
@@ -364,7 +306,9 @@ pub(crate) fn rename_oldvg() {
 pub(crate) fn rescan_host() -> Result<()> {
     debug!("Inside rescan_host");
 
-    let old_mounts = helper::run_fun("lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'")?;
+    let old_mounts = helper::run_fun(
+        "lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'",
+    )?;
 
     debug!("Rescanning the host");
     match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
@@ -375,9 +319,7 @@ pub(crate) fn rescan_host() -> Result<()> {
         }
     }
 
-    match helper::run_cmd(
-    "udevadm trigger"
-     ) {
+    match helper::run_cmd("udevadm trigger") {
         Ok(_) => {
             println!("udevadm trigger was successful")
         }
@@ -420,21 +362,17 @@ pub(crate) fn rescan_host() -> Result<()> {
         mount(&format!("/dev/{device_efi}"), "/boot/efi", "", false)?;
     }
 
-    if log_enabled!(log::Level::Debug){
+    if log_enabled!(log::Level::Debug) {
         debug!("At the end of rescan_host. What about the mounts?");
-        helper::run_cmd(
-        "lsblk"
-        )?;
-}
+        helper::run_cmd("lsblk")?;
+    }
     Ok(())
 }
 
 pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
     debug!("Inside disable_broken_disk");
     let recover_disk = helper::get_recovery_disk_path(cli_info).replace("/dev/", "");
-    helper::run_cmd(
-    "vgchange -an rootvg"
-    )?;
+    helper::run_cmd("vgchange -an rootvg")?;
 
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
     Ok(())
@@ -445,7 +383,7 @@ pub(crate) fn bind_mount(source: &str, destination: &str) -> Result<()> {
     sys_mount::Mount::builder()
         .fstype(&supported_fs)
         .flags(sys_mount::MountFlags::BIND)
-        .mount(source, destination);
-
+        .mount(source, destination)?;
+    debug!("Bind mount {source} to {destination} was successful");
     Ok(())
 }

@@ -27,19 +27,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "alar2"
-version = "0.5.1"
+name = "alar"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "clap",
  "env_logger",
  "fs_extra",
  "log",
- "nc",
  "openssl",
  "reqwest",
  "serde",
  "serde_json",
+ "simple-base64",
  "sys-mount",
 ]
 
@@ -766,15 +766,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nc"
-version = "0.8.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "388827c54cacb7f6604751c05dc9adf9ec9c1b35a6f50948e3d11049502481f3"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1160,6 +1151,12 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "simple-base64"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6385ef05b7bbfddaa8bf6306d059adac087990d659576c73b7da802d9a6ce91f"
 
 [[package]]
 name = "slab"
