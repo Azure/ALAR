@@ -1,6 +1,6 @@
 use crate::helper;
 use clap::{App, Arg};
-use log::{debug, info};
+use log::{debug,};
 use anyhow::Result;
 
 // The Initiator type is used to determine the context in which ALAR is running
