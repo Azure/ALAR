@@ -68,7 +68,7 @@ the administrator to further recover the VM after it is up, running and accessib
                 .takes_value(false),
         )
         .arg(
-            Arg::with_name("SELFHELP")
+            Arg::with_name("SELFHELP") // We need a second parameter to use telemtetry. There is a bug with 'vm repair run' which doesn't allow us the standard flag. Also takes values must set to be TRUE otherwise this flag isn't recognized
                 .long("SELFHELP")
                 .takes_value(true)
                 .index(2),
