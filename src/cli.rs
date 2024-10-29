@@ -127,6 +127,6 @@ the administrator to further recover the VM after it is up, running and accessib
         }
     };
 
-    info!("cli_info is {cli_info:#?}");
+    debug!("cli_info is {cli_info:#?}");
     Ok(cli_info)
 }
