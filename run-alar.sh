@@ -14,7 +14,7 @@ if [[ ${ARCH} == "aarch64" ]]; then
         chmod 700 alar
 
         # Start the recovery
-        RUST_LOG=info ./alar $@
+        RUST_LOG=debug ./alar $@
         exit $?
 else
         #curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar
@@ -22,6 +22,6 @@ else
         chmod 700 alar
 
         # Start the recovery
-        RUST_LOG=info ./alar $@
+        RUST_LOG=debug ./alar $@
         exit $?
 fi
