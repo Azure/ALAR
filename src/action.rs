@@ -34,7 +34,7 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
             distro_type: distro::DistroType::Suse,
             distro_subtype: distro::DistroSubType::None,
         },
-        s if s.contains("azurelinux") => distro::DistroKind {
+        s if s.contains("Azure Linux") => distro::DistroKind {
             distro_type: distro::DistroType::AzureLinux,
             distro_subtype: distro::DistroSubType::None,
         },
