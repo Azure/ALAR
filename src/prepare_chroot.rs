@@ -15,18 +15,17 @@ pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Res
     Ok(())
 }
 fn mount_required_partitions(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
-    //let rescue_disk_path = get_rescue_disk_path(distro, cli);
-
     let os_partition = distro
         .partitions
         .iter()
         .find(|partition| partition.contains_os)
-        .unwrap();
+        .unwrap(); // unwrap is safe as we have always an OS partition
+    
     let efi_partition = distro
         .partitions
         .iter()
-        .find(|partition| partition.part_type == "EF00")
-        .unwrap();
+        .find(|partition| partition.part_type == "EF00");
+    
     let boot_partition = distro
         .partitions
         .iter()
@@ -129,12 +128,17 @@ fn mount_required_partitions(distro: &distro::Distro, cli: &cli::CliInfo) -> Res
         }
     }
 
-    mount::mount(
-        &format!("{}{}", rescue_disk_path, efi_partition.number),
-        constants::RESCUE_ROOT_BOOT_EFI,
-        "",
-        false,
-    )?;
+    // Also be carefull with the efi partition, not all distros have one
+    if efi_partition.is_some() {
+        if let Some(efi_partition) = efi_partition {
+            mount::mount(
+                &format!("{}{}", rescue_disk_path, efi_partition.number),
+                constants::RESCUE_ROOT_BOOT_EFI,
+                "",
+                false,
+            )?;
+        }
+    }
 
     Ok(())
 }
