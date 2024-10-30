@@ -74,8 +74,13 @@ fi
 # SUSE PART
 if [[ "$isSuse" == "true" ]]; then
     serial_fix_suse_redhat
-    
 fi
+
+# AzureLinux PART
+if [[ "$isAzureLinux" == "true" ]]; then
+    serial_fix_suse_redhat
+fi
+
 
 # UBUNTU PART
 if [[ "$isUbuntu" == "true" ]]; then
