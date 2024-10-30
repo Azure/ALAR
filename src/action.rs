@@ -1,6 +1,6 @@
-use crate::{constants, distro, helper,};
-use anyhow::{Result,};
-use log::{debug};
+use crate::{constants, distro, helper};
+use anyhow::Result;
+use log::debug;
 use std::io::Write;
 use std::{env, fs, io, process};
 
@@ -111,7 +111,6 @@ pub fn set_environment(distro: &distro::Distro) {
             env::set_var("DISTROTYPE", "UNKNOWN");
             env::set_var("DISTROSUBTYPE", "UNKNOWN");
         }
-
     }
 }
 
@@ -204,20 +203,18 @@ pub(crate) fn run_repair_script(action_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn is_action_available(action_name: &str) -> io::Result<bool> {
+pub(crate) fn is_action_available(action_name: &str) -> Result<bool> {
     let action_name = action_name.to_lowercase();
     if action_name == constants::CHROOT_CLI {
         return Ok(true);
     }
 
     let dircontent = fs::read_dir(constants::ACTION_IMPL_DIR)?;
-    let mut actions: Vec<String> = Vec::new();
     for item in dircontent {
-        let detail = format!("{}", item?.path().display());
-        actions.push(detail);
+        let dir_item = item?.path().display().to_string();
+        if dir_item == format!("{action_name}-impl.sh") {
+            return Ok(true);
+        }
     }
-
-    Ok(actions
-        .iter()
-        .any(|a| a.ends_with(&format!("{action_name}-impl.sh"))))
+    Ok(false)
 }
