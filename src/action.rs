@@ -38,7 +38,7 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
             distro_type: distro::DistroType::AzureLinux,
             distro_subtype: distro::DistroSubType::None,
         },
-        s if s.contains("mariner") => distro::DistroKind {
+        s if s.contains("Linux Mariner") => distro::DistroKind {
             distro_type: distro::DistroType::AzureLinux,
             distro_subtype: distro::DistroSubType::None,
         },
@@ -212,6 +212,7 @@ pub(crate) fn is_action_available(action_name: &str) -> Result<bool> {
     let dircontent = fs::read_dir(constants::ACTION_IMPL_DIR)?;
     for item in dircontent {
         let dir_item = item?.path().display().to_string();
+        let dir_item = dir_item.strip_prefix(&format!("{}/", constants::ACTION_IMPL_DIR)).unwrap_or_default().to_string();
         if dir_item == format!("{action_name}-impl.sh") {
             return Ok(true);
         }
