@@ -364,7 +364,7 @@ pub(crate) fn rescan_host() -> Result<()> {
 
     if log_enabled!(log::Level::Debug) {
         debug!("At the end of rescan_host. What about the mounts?");
-        helper::run_cmd("lsblk")?;
+        debug!("{}", helper::run_fun("lsblk -f")?);
     }
     Ok(())
 }
