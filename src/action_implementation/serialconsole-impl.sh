@@ -56,7 +56,7 @@ EOF
     
     # update grub
     if [[ $isRedHat == "true" ]]; then
-        distro=$(grep '^ID=' /etc/os-release | cut -d '"' -f2)
+        distro=$(grep '^ID=' /etc/os-release | cut -d '=' -f2 | cut -d'"' -f2)
         if [[ ${distro} == "rhel" ]]; then
             distro="redhat" ;
         fi
@@ -74,8 +74,13 @@ fi
 # SUSE PART
 if [[ "$isSuse" == "true" ]]; then
     serial_fix_suse_redhat
-    
 fi
+
+# AzureLinux PART
+if [[ "$isAzureLinux" == "true" ]]; then
+    serial_fix_suse_redhat
+fi
+
 
 # UBUNTU PART
 if [[ "$isUbuntu" == "true" ]]; then

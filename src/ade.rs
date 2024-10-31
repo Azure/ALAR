@@ -1,283 +1,352 @@
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::process;
+use std::process::Command;
+
+use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
+use crate::distro::PartInfo;
 use crate::helper;
 use crate::mount;
-use crate::redhat;
-use crate::ubuntu;
+use anyhow::Result;
+use log::debug;
+use log::error;
+use log::info;
 
-/*
-
-At first we need to find out whether we have to work on an encrypted OS
-We can do this with lsblk in order to find out whether we have a device with the name osencrypt available
-
- lsblk
-NAME                MAJ:MIN RM  SIZE RO TYPE  MOUNTPOINT
-sda                   8:0    0   48M  0 disk
-└─sda1                8:1    0   46M  0 part  /mnt/azure_bek_disk
-sdb                   8:16   0   30G  0 disk
-├─sdb1                8:17   0 29.9G  0 part  /
-├─sdb14               8:30   0    4M  0 part
-└─sdb15               8:31   0  106M  0 part  /boot/efi
-sdc                   8:32   0   64G  0 disk
-├─sdc1                8:33   0  500M  0 part  /tmp/dev/sdc1
-├─sdc2                8:34   0  500M  0 part  /investigateroot/boot
-├─sdc3                8:35   0    2M  0 part
-└─sdc4                8:36   0   63G  0 part
-  └─osencrypt       253:0    0   63G  0 crypt
-    ├─rootvg-tmplv  253:1    0    2G  0 lvm   /investigateroot/tmp
-    ├─rootvg-usrlv  253:2    0   10G  0 lvm   /investigateroot/usr
-    ├─rootvg-optlv  253:3    0    2G  0 lvm   /investigateroot/opt
-    ├─rootvg-homelv 253:4    0    1G  0 lvm   /investigateroot/home
-    ├─rootvg-varlv  253:5    0    8G  0 lvm   /investigateroot/var
-    └─rootvg-rootlv 253:6    0    2G  0 lvm   /investigateroot
-sdd                   8:48   0   50G  0 disk
-└─sdd1                8:49   0   50G  0 part  /mnt
-sr0                  11:0    1  628K  0 rom
-
-In the next step it is required to unmount all of LVM LVs.
-This is due to the fact that we need to do a fs-check on all of the partitions. This we have to do for the boot
-and EFI partition as well.
-
-In the next step we mount them again on the usual paths for ALAR
-
-------
-
-On a non LVM system we need to do the similar steps
-On an Ubuntu 16.x distro we have these details
-
- lsblk
-NAME          MAJ:MIN RM  SIZE RO TYPE  MOUNTPOINT
-sda             8:0    0   50G  0 disk
-└─sda1          8:1    0   50G  0 part  /mnt
-sdb             8:16   0   48M  0 disk
-└─sdb1          8:17   0   46M  0 part  /mnt/azure_bek_disk
-sdc             8:32   0   30G  0 disk
-├─sdc1          8:33   0 29.9G  0 part  /
-├─sdc14         8:46   0    4M  0 part
-└─sdc15         8:47   0  106M  0 part  /boot/efi
-sdd             8:48   0   30G  0 disk
-├─sdd1          8:49   0 29.7G  0 part
-│ └─osencrypt 253:0    0 29.7G  0 crypt /investigateroot
-├─sdd2          8:50   0  256M  0 part  /investigateroot/boot
-├─sdd14         8:62   0    4M  0 part
-└─sdd15         8:63   0  106M  0 part  /tmp/dev/sdd15
-sr0            11:0    1  628K  0 rom
-
-Ubuntu 16 or 18 don't have a seperate boot partition
-If ADE is used on them an extra partition is created to store the boot and luks part on an not encrypted
-partition
-
-*/
-
-pub(crate) fn is_ade_enabled() -> bool {
-    cmd_lib::run_cmd!(lsblk | grep -q osencrypt).is_ok()
+enum Mountpoint {
+    Mounted,
+    NotMounted,
 }
 
-pub(crate) fn do_ubuntu_ade(mut partition_info: Vec<String>, mut distro: &mut distro::Distro) {
-    helper::log_info("This is a recent Ubuntu 16.x/18.x with ADE enabled");
+fn is_mountpoint(mountdir: &str) -> Result<Mountpoint> {
+    let res = Command::new("mountpoint")
+        .arg("-q")
+        .arg(mountdir)
+        .status()?;
 
-    // Get EFI partition
-    partition_info.retain(|x| x.contains("EF00")); //Get the UEFI partition
-    helper::set_efi_part_number_and_fs(distro, &partition_info[0]);
-    helper::set_efi_part_path(distro);
-    helper::fsck_partition(
-        helper::get_efi_part_path(distro).as_str(),
-        helper::get_efi_part_fs(distro).as_str(),
-    );
-
-    // Set the root_part_path manually
-    distro.rescue_root.root_part_path = constants::OSENCRYPT_PATH.to_string();
-
-    set_root_part_fs(distro);
-
-    // Due to the changed partition layout on an ADE enabled OS we have to set the boot partiton details
-    // We use hardcoded values in this case
-    distro.boot_part.boot_part_fs = "ext2".to_string();
-    distro.boot_part.boot_part_number = 2;
-    distro.boot_part.boot_part_path = format!(
-        "{}{}",
-        helper::read_link(constants::RESCUE_DISK),
-        distro.boot_part.boot_part_number
-    );
-
-    // Due to the fact that we have already mounted filesystems for ADE on a repair-vm
-    // we need to unmount them first before we can do a fsck on each of the partitions
-    umount_investigations(distro);
-    fsck_partitions(distro);
-
-    ubuntu::verify_ubuntu(distro);
+    match res.success() {
+        true => Ok(Mountpoint::Mounted),
+        false => Ok(Mountpoint::NotMounted),
+    }
 }
 
-pub(crate) fn do_redhat_nolvm_ade(partition_info: Vec<String>, mut distro: &mut distro::Distro) {
-    // Unfortunately we need to work with hardcoded values as there exist no label information
-    distro.boot_part.boot_part_fs = "xfs".to_string();
-    distro.boot_part.boot_part_number = 1;
+fn has_lvm_partition(partitions: &[PartInfo]) -> bool {
+    partitions.iter().any(|part| part.part_type == "8E00")
+}
 
-    set_root_part_fs(distro);
-    distro.rescue_root.root_part_number = 2;
+pub(crate) fn prepare_ade_environment(
+    cli_info: &mut CliInfo,
+    partitions: &[PartInfo],
+) -> Result<bool> {
+    let is_repair_vm = helper::is_repair_vm_imds()?;
 
-    // Set the root_part_path manually for ADE
-    distro.rescue_root.root_part_path = constants::OSENCRYPT_PATH.to_string();
-
-    //For EFI partition we use normal logic in order to setup the details correct
-    for partition in partition_info.iter() {
-        if partition.contains("EFI") {
-            helper::set_efi_part_number_and_fs(distro, partition);
+    if is_repair_vm {
+        match is_mountpoint(constants::INVESTIGATEROOT_DIR) {
+            Ok(Mountpoint::Mounted) => {
+                // With this validation we are running in a vm_repair which has automatically mounted the encrypted disk
+                // ALAR requires to modify this setup
+                modify_existing_ade_setup(partitions, cli_info)?;
+                Ok(true)
+            }
+            Ok(Mountpoint::NotMounted) => {
+                // We are running in a vm_repair but the encrypted disk is not mounted. This condition may happen after a repair vm got restarted
+                mount_ade_manually(partitions, cli_info)?;
+                Ok(true)
+            }
+            Err(e) => {
+                error!("Error checking mountpoint: {e}");
+                process::exit(1);
+            }
+        }
+    } else {
+        // This is the case when another VM is used to recover the encrypted disk
+        println!("Not running in a repair VM context");
+        if cli_info.ade_password.is_empty() {
+            match read_pass_phrase_file() {
+                Ok(_) => {
+                    // BEK device is available and the password can be read from it
+                    mount_ade_manually(partitions, cli_info)?;
+                    Ok(true)
+                }
+                Err(e) => {
+                    error!("Error reading the pass phrase file  {e} from the BEK disk");
+                    error!("Please provide the password in base64 format to decrypt the disk.");
+                    process::exit(1);
+                }
+            }
+        } else {
+            // The password is passed over to ALAR. We can use the password to mount the disk and proceed with the recovery process
+            mount_ade_manually(partitions, cli_info)?;
+            Ok(true)
         }
     }
-
-    distro.boot_part.boot_part_path = format!(
-        "{}{}",
-        helper::read_link(constants::RESCUE_DISK),
-        distro.boot_part.boot_part_number
-    );
-
-    helper::set_efi_part_path(distro);
-
-    //Unmount the investigation path, otherwise the fsck isn't possible
-    umount_investigations(distro);
-    fsck_partitions(distro);
-
-    redhat::verify_redhat_nolvm(distro);
 }
 
-pub(crate) fn do_redhat6_or_7_ade(partition_info: Vec<String>, mut distro: &mut distro::Distro) {
-    println!("6_7 info : {:?}", &partition_info);
-    if let Some(root_info) = partition_info.iter().find(|x| x.contains("GiB")) {
-        distro.rescue_root.root_part_number = helper::get_partition_number_detail(root_info);
-        distro.rescue_root.root_part_path = format!(
-            "{}{}",
-            helper::read_link(constants::RESCUE_DISK),
-            distro.rescue_root.root_part_number
+/**
+ The function modify_existing_ade_setup is used when ALAR is running in a repair VM context.
+ This function relies on an existent BEK partition from which the password can be read.
+*/
+fn modify_existing_ade_setup(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result<()> {
+    mount::umount(constants::INVESTIGATEROOT_DIR, true)?;
+    if has_lvm_partition(partitions) {
+        process::Command::new("vgchange")
+            .arg("-an")
+            .arg(constants::RESCUE_ROOTVG)
+            .status()?;
+    }
+    process::Command::new("cryptsetup")
+        .arg("close")
+        .arg("osencrypt")
+        .status()?;
+
+    enable_encrypted_partition(cli_info, partitions)?;
+    Ok(())
+}
+
+fn mount_ade_manually(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result<()> {
+    info!("Mounting ADE encrypted disk manually");
+    info!("Partitions: {:#?}", partitions);
+
+    enable_encrypted_partition(cli_info, partitions)?;
+    Ok(())
+}
+
+fn create_rescue_bek_dir() -> Result<()> {
+    let command = format!("mkdir -p {}", constants::RESCUE_BEK);
+    helper::run_cmd(&command).map_err(|open_error| {
+        error!("Failed to create the BEK directory: {open_error}");
+        open_error
+    })?;
+
+    Ok(())
+}
+
+fn create_rescue_bek_boot() -> Result<()> {
+    let command = format!("mkdir -p {}", constants::RESCUE_BEK_BOOT);
+    helper::run_cmd(&command).map_err(|open_error| {
+        error!("Failed to create the BEK boot directory: {open_error}");
+        open_error
+    })?;
+
+    Ok(())
+}
+
+fn find_root_partition_number(partitions: &[PartInfo]) -> i32 {
+    let root_device = partitions
+        .iter()
+        .find(|part| part.fstype.contains("crypt?"));
+    // unwrap is safe here because we know that there is a root partition
+    root_device.unwrap().number
+}
+
+fn find_boot_partition_number(partitions: &[PartInfo]) -> i32 {
+    let boot_partition = partitions
+        .iter()
+        .filter(|part| part.part_type != "EF00")
+        .find(|part| part.fstype != "crypt?");
+    // unwrap is safe here because we know that there is a boot partition
+    boot_partition.unwrap().number
+}
+
+fn mount_bek_volume() -> Result<()> {
+    create_rescue_bek_dir()?;
+    let bek_volume = match helper::run_fun("blkid -t LABEL='BEK VOLUME' -o device") {
+        Ok(device) => {
+            debug!("BEK volume details: {device}");
+            device
+        }
+        Err(e) => {
+            error!("blkid raised an error : {e}");
+            error!("Please set the password manually and run ALAR with the option :  --ade-password <password>");
+            process::exit(1);
+        }
+    };
+    if bek_volume.is_empty() {
+        error!("There is no BEK VOLUME attached to the VM");
+        error!("Please get the password manually and run ALAR with the option :  --ade-password <password>");
+        process::exit(1);
+    };
+
+    mount::mount(bek_volume.trim(), constants::RESCUE_BEK, "", false)?;
+    if !Path::new(constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME).exists() {
+        error!("The pass phrase file doesn't exist. Please restart the VM to get the file LinuxPassPhraseFileName automatically created.");
+        mount::umount(constants::RESCUE_BEK, false)?;
+        process::exit(1);
+    }
+    Ok(())
+}
+
+fn umount_bek_volume() -> Result<()> {
+    mount::umount(constants::RESCUE_BEK, false)?;
+    Ok(())
+}
+
+fn read_pass_phrase_file() -> Result<String> {
+    mount_bek_volume()?;
+    let pass_phrase_file = fs::read_to_string(constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME)?;
+    umount_bek_volume()?;
+    Ok(pass_phrase_file)
+}
+
+fn mount_boot_partition(cli_info: &CliInfo, partitions: &[distro::PartInfo]) -> Result<()> {
+    let boot_partition_number = find_boot_partition_number(partitions);
+    let boot_partition_path = helper::get_recovery_disk_path(cli_info);
+    create_rescue_bek_boot()?;
+    mount::mount(
+        &format!("{}{}", boot_partition_path, boot_partition_number),
+        constants::RESCUE_BEK_BOOT,
+        "",
+        false,
+    )?;
+    Ok(())
+}
+
+fn umount_boot_partition() -> Result<()> {
+    mount::umount(constants::RESCUE_BEK_BOOT, false)?;
+    Ok(())
+}
+
+fn create_pass_phrase_file(phrase: &str) -> Result<()> {
+    fs::write(constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME, phrase)?;
+    Ok(())
+}
+
+fn enable_encrypted_partition(
+    cli_info: &mut CliInfo,
+    partitions: &[distro::PartInfo],
+) -> Result<()> {
+    let partition_path = helper::get_recovery_disk_path(cli_info);
+    let root_partiton_number = find_root_partition_number(partitions);
+
+    let command: String = if cli_info.ade_password.is_empty() {
+        // we verified earlier that the BEK does exists and is readable
+        mount_bek_volume()?;
+        mount_boot_partition(cli_info, partitions)?;
+        format!(
+            "cryptsetup luksOpen --key-file {} --header {}/luks/osluksheader {}{} rescueencrypt",
+            constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME,
+            constants::RESCUE_BEK_BOOT,
+            partition_path,
+            root_partiton_number
+        )
+    } else {
+        create_pass_phrase_file(&cli_info.ade_password)?;
+        mount_boot_partition(cli_info, partitions)?;
+        format!(
+            "cryptsetup luksOpen --key-file {} --header {}/luks/osluksheader {}{} rescueencrypt",
+            constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME,
+            constants::RESCUE_BEK_BOOT,
+            partition_path,
+            root_partiton_number
+        )
+    };
+
+    match process::Command::new("sh").arg("-c").arg(&command).status() {
+        Ok(status) => {
+            debug!("luksopen status: {}", &status);
+            if status.success() {
+                debug!("luksopen success");
+            } else {
+                debug!("luksopen failed");
+                if cli_info.ade_password.is_empty() {
+                    umount_bek_volume()?;
+                }
+                umount_boot_partition()?;
+                close_rescueencrypt()?;
+                error!("Error: Enabeling the encrypted device isn't possible. Please verify that the passphrase is correct. ALAR needs to stop.");
+                process::exit(1);
+            }
+        }
+        Err(e) => {
+            umount_bek_volume()?;
+            umount_boot_partition()?;
+            fs::remove_file(constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME)?;
+            error!("Error: Enabeling the encrypted device isn't possible. ALAR needs to stop. Error detail is: {e}");
+            process::exit(1);
+        }
+    }
+    umount_boot_partition()?;
+    if cli_info.ade_password.is_empty() {
+        umount_bek_volume()?;
+    } else {
+        // for security reasons we have to clear the ADE password
+        cli_info.clear_password();
+        fs::remove_file(constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn ade_importvg() -> Result<()> {
+    debug!("Inside ade_importvg");
+
+    // Does the recover VM use LVM as well?
+    if Path::new("/dev/rootvg").is_dir() {
+        info!("Importing the rescuevg");
+
+        let vgimportclone = format!(
+            "vgimportclone -n rescuevg {}; vgchange -ay rescuevg;vgscan --mknodes",
+            constants::ADE_OSENCRYPT_PATH
         );
-    }
 
-    if let Some(boot_info) = partition_info.iter().find(|x| x.contains("MiB")) {
-        distro.boot_part.boot_part_fs = helper::get_partition_filesystem_detail(boot_info);
-        distro.boot_part.boot_part_number = helper::get_partition_number_detail(boot_info);
-        distro.boot_part.boot_part_path = format!(
-            "{}{}",
-            helper::read_link(constants::RESCUE_DISK),
-            distro.boot_part.boot_part_number
-        );
-    }
+        helper::run_cmd(&vgimportclone).map_err(|open_error| {
+            error!("Failed to import the VG: {open_error}");
+            open_error
+        })?;
 
-    // Set the root_part_path manually for ADE
-    distro.rescue_root.root_part_path = constants::OSENCRYPT_PATH.to_string();
-    set_root_part_fs(distro);
+        ade_rename_rootvg()?;
+    } else {
+        let command = "vgchange -ay rootvg;vgscan --mknodes";
+        helper::run_cmd(command).map_err(|open_error| {
+            error!("Failed to activate the rootvg VG : {open_error}");
+            open_error
+        })?;
+    };
 
-    //Unmount the investigation path, otherwise the fsck isn't possible
-    umount_investigations(distro);
-    fsck_partitions(distro);
-
-    redhat::verify_redhat_nolvm(distro);
+    Ok(())
 }
 
-pub(crate) fn do_redhat_lvm_ade(mut partition_info: Vec<String>, mut distro: &mut distro::Distro) {
-    /*
-     Unfortunately we need to work with hardcoded values as there exist no label information
+pub(crate) fn ade_rename_rootvg() -> Result<()> {
+    debug!("Renaming the rootvg to oldvg and the rescuevg to rootvg");
+    let command = "vgrename rootvg oldvg; vgrename rescuevg rootvg";
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to rename the ADE VG: {open_error}");
+        open_error
+    })?;
 
-     Number  Start   End     Size    File system  Name                  Flags
-    1      1049kB  525MB   524MB   fat16        EFI System Partition  boot, esp
-    2      525MB   1050MB  524MB   xfs                                msftdata
-    3      1050MB  1052MB  2097kB                                     bios_grub
-    4      1052MB  68.7GB  67.7GB                                     lvm
-    */
-
-    // Get the right partitions
-    // Get the boot partition first
-    let mut partition_info_copy = partition_info.to_owned(); // we need a copy for later usage
-    partition_info.retain(|x| !(x.contains("EF00") || x.contains("EF02") || x.contains("8E00"))); //remove the UEFI, the bios_boot partition
-
-    distro.boot_part.boot_part_fs = helper::get_partition_filesystem_detail(&partition_info[0]);
-    distro.boot_part.boot_part_number = helper::get_partition_number_detail(&partition_info[0]);
-
-    set_root_part_fs(distro);
-    distro.rescue_root.root_part_number = 4;
-
-    // Set the root_part_path manually for ADE
-    distro.rescue_root.root_part_path = constants::OSENCRYPT_PATH.to_string();
-
-    //For EFI partition we use normal logic in order to setup the details correct
-    partition_info_copy.retain(|x| x.contains("EF00")); //Get the UEFI partition only
-    helper::set_efi_part_number_and_fs(distro, &partition_info_copy[0]);
-
-    distro.boot_part.boot_part_path = format!(
-        "{}{}",
-        helper::read_link(constants::RESCUE_DISK),
-        distro.boot_part.boot_part_number
-    );
-
-    helper::set_efi_part_path(distro);
-
-    // LVM mounts need to be removed. We need to remount them later
-    umount_investigations_lvm();
-    //Unmount the investigation path, otherwise the fsck isn't possible
-    umount_investigations(distro);
-    fsck_partitions(distro);
-
-    // Set the LVM path details in order to work with ADE
-    distro.lvm_details.lvm_root_part = redhat::lvm_path_helper("rootlv");
-    distro.lvm_details.lvm_usr_part = redhat::lvm_path_helper("usrlv");
-    distro.lvm_details.lvm_var_part = redhat::lvm_path_helper("varlv");
-
-    redhat::verify_redhat_lvm(distro);
+    Ok(())
 }
 
-fn fsck_partitions(distro: &distro::Distro) {
-    helper::fsck_partition(
-        distro.rescue_root.root_part_path.as_str(),
-        distro.rescue_root.root_part_fs.as_str(),
-    );
+pub(crate) fn ade_lvm_cleanup() -> Result<()> {
+    let command = if Path::new("/dev/oldvg").is_dir() {
+        "vgchange -an rootvg; cryptsetup close rescueencrypt;vgrename oldvg rootvg"
+    } else {
+        "vgchange -an rootvg; cryptsetup close rescueencrypt"
+    };
 
-    helper::fsck_partition(
-        distro.boot_part.boot_part_path.as_str(),
-        distro.boot_part.boot_part_fs.as_str(),
-    );
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to cleanup the ADE VG: {open_error}");
+        open_error
+    })?;
 
-    helper::fsck_partition(
-        helper::get_efi_part_path(distro).as_str(),
-        helper::get_efi_part_fs(distro).as_str(),
-    );
+    Ok(())
 }
 
-fn umount_investigations(distro: &distro::Distro) {
-    // umount EFI
-    if helper::has_efi_part(distro) {
-        mount::umount(constants::INVESTIGATEROOT_EFI_DIR);
+pub(crate) fn close_rescueencrypt() -> Result<()> {
+    // Get out of constants::RESCUE_ROOT, otherwise umount isn't possible for RESCUE_ROOT
+    match env::set_current_dir("/") {
+        Ok(_) => {}
+        Err(e) => println!("Error in set current dir : {e}"),
     }
-    // umount boot
-    mount::umount(constants::INVESTIGATEROOT_BOOT_DIR);
 
-    // umount osencrypt
-    if !distro.is_lvm {
-        //  If it is LVM we have already unmounted the '/investigationroot'
-        mount::umount(constants::INVESTIGATEROOT_DIR);
-    }
-}
+    //mount::umount(constants::RESCUE_ROOT, true)?;
+    let command = "cryptsetup close rescueencrypt";
+    helper::run_cmd(command).map_err(|open_error| {
+        error!("Failed to close rescueencrypt: {open_error}");
+        open_error
+    })?;
 
-fn umount_investigations_lvm() {
-    /*
-        These are the mounts we have to remove
-        └─sdc4                8:36   0   63G  0 part
-            └─osencrypt       253:0    0   63G  0 crypt
-            ├─rootvg-tmplv  253:1    0    2G  0 lvm   /investigateroot/tmp
-            ├─rootvg-usrlv  253:2    0   10G  0 lvm   /investigateroot/usr
-            ├─rootvg-optlv  253:3    0    2G  0 lvm   /investigateroot/opt
-            ├─rootvg-homelv 253:4    0    1G  0 lvm   /investigateroot/home
-            ├─rootvg-varlv  253:5    0    8G  0 lvm   /investigateroot/var
-            └─rootvg-rootlv 253:6    0    2G  0 lvm   /investigateroot
-    */
-    mount::umount("/investigateroot/tmp");
-    mount::umount("/investigateroot/usr");
-    mount::umount("/investigateroot/opt");
-    mount::umount("/investigateroot/home");
-    mount::umount("/investigateroot/var");
-    mount::umount("/investigateroot");
-}
-
-fn set_root_part_fs(mut distro: &mut distro::Distro) {
-    if let Ok(line) = cmd_lib::run_fun!(lsblk -fn /dev/mapper/osencrypt) {
-        distro.rescue_root.root_part_fs = helper::cut(line.as_str(), " ", 1).to_string();
-    }
+    Ok(())
 }

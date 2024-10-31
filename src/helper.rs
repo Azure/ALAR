@@ -1,264 +1,238 @@
-use crate::constants;
-use crate::distro::{Distro, EfiPartT, EfiPartition};
-use crate::mount;
-use chrono::prelude::Utc;
-use cmd_lib::*;
-use std::process::Stdio;
-use std::{fs, process};
+use crate::{
+    ade,
+    cli::{self, CliInfo},
+    constants,
+    distro::{Distro, LogicalVolumesType},
+    mount,
+};
+use anyhow::{anyhow, Context, Result};
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{
+    fs, path::Path, process::{self, Command}
+};
 
-pub fn log_info(msg: &str) {
-    println!("[Info {}] {}", Utc::now(), msg);
+// There are issue with readlink or readpath. Somehow the pathes can't be resolved correctly
+// The following functions are a workaround to get the correct path and the detemine the partition numbers
+// based on those detalis we can get the partition path
+pub(crate) fn realpath(path: &str) -> Result<String> {
+    let device = Command::new("readlink")
+        .arg("-fe")
+        .arg(path)
+        .output()?
+        .stdout;
+    if device.is_empty() {
+        return Err(anyhow!("Failed to get the real path of {}", path));
+    }
+    Ok(String::from_utf8(device)?.trim().to_string())
 }
 
-#[allow(dead_code)]
-pub fn log_output(msg: &str) {
-    println!("[Output {}] {}", Utc::now(), msg);
+pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
+    let mut path_info = String::new();
+    let error_condition = |e| {
+        error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
+        error!("Error detail: {}", e);
+        process::exit(1);
+    };
+
+    if !cli_info.custom_recover_disk.is_empty() {
+        match realpath(&cli_info.custom_recover_disk) {
+            Ok(path) => {
+                path_info = path;
+            }
+            Err(e) => error_condition(e),
+        }
+    } else {
+        match realpath(constants::RESCUE_DISK) {
+            Ok(path) => {
+                path_info = path;
+            }
+            Err(e) => error_condition(e),
+        }
+    };
+    path_info
 }
 
-#[allow(dead_code)]
-pub fn log_warning(msg: &str) {
-    println!("[Warning {}] {}", Utc::now(), msg);
-}
+pub(crate) fn is_repair_vm_imds() -> Result<bool> {
+    #[derive(Serialize, Deserialize, Debug)]
+    struct Tags {
+        name: String,
+    }
+    let mut is_repair_vm = false;
+    let client = reqwest::blocking::Client::new();
 
-pub fn log_error(msg: &str) {
-    println!("[Error {}] {}", Utc::now(), msg);
-}
+    let data = client
+        .get("http://169.254.169.254/metadata/instance/compute/?api-version=2021-02-01")
+        .header("Metadata", "true")
+        .send()?
+        .text()?;
+    let data: Value = serde_json::from_str(&data)?;
+    let data = data["tagsList"]
+        .as_array()
+        .ok_or(anyhow!("Array extraction not possible"))?;
 
-pub fn log_debug(msg: &str) {
-    println!("[Debug {}] {}", Utc::now(), msg);
-}
-
-pub(crate) fn read_link(path: &str) -> String {
-    match fs::canonicalize(path) {
-        Ok(value) => format!("{}", value.display()),
-        Err(e) => {
-            log_error(&e.to_string());
-            panic!("readlink did fail : {path}")
+    for tags in data {
+        if serde_json::from_value::<Tags>(tags.to_owned())?
+            .name
+            .contains("repair_source")
+        {
+            is_repair_vm = true;
         }
     }
+
+    Ok(is_repair_vm)
 }
 
-pub(crate) fn part_info_helper(sgdiskinfo: &str) -> String {
-    let part_number = cut(sgdiskinfo, " ", 0).trim_end().parse::<u8>().unwrap();
-    let path = format!("{}{}", read_link(constants::RESCUE_DISK), part_number);
-    let run_output = run_fun!(blkid -o export $path);
-    match run_output {
-        Ok(value) => value,
-        Err(_) => "ERROR".to_string(),
-    }
-}
-
-pub(crate) fn cut<'a>(source: &'a str, delimiter: &str, field: usize) -> &'a str {
-    match source.split(delimiter).nth(field) {
-        Some(value) => value,
-        None => {
-            log_error("String not found. FATAL! ERROR NOT RECOVERABLE");
-            panic!("Error in function cut");
-        }
-    }
-}
-
-pub(crate) fn get_partition_number_detail(sgdiskinfo: &str) -> u8 {
-    cut(sgdiskinfo, " ", 0).parse::<u8>().unwrap()
-}
-
-pub(crate) fn get_partition_filesystem_detail(sgdiskinfo: &str) -> String {
-    let info = part_info_helper(sgdiskinfo);
-    let mut lines = vec![];
-    let mut fs_return = "".to_string();
-    for i in info.lines() {
-        lines.push(i);
-    }
-    lines.retain(|x| x.starts_with("TYPE="));
-    if let Some(fs) = lines[0].to_string().strip_prefix("TYPE=") {
-        fs_return = fs.to_string();
-    }
-    fs_return
-}
-
-pub(crate) fn get_pretty_name(path: &str) -> String {
-    let mut pretty_name: String = "".to_string();
-    if let Ok(name) = run_fun!(grep -s PRETTY_NAME $path) {
-        pretty_name = cut(&name, "=", 1).to_string();
-    } else if let Ok(value) = fs::read_to_string(constants::REDHAT_RELEASE) {
-        pretty_name = value;
-    }
-    log_info(format!("Pretty Name is : {}", &pretty_name).as_str());
-    pretty_name
-}
-
-pub(crate) fn fsck_partition(partition_path: &str, partition_filesystem: &str) {
-    // Need to handel the condition if no filesystem is available
-    // This can happen if we have a LVM partition
-    if partition_filesystem.is_empty() {
-        return;
-    }
-
-    //let mut result: result::Result<String, io::Error> = Err(io::Error::new(io::ErrorKind::Other, "none")); // run_cmd returns "type CmdResult = Result<(), Error>;"
-    let mut exit_code = Some(0i32);
-
-    match partition_filesystem {
-        "xfs" => {
-            log_info(format!("fsck for XFS on {partition_path}").as_str());
-            if let Err(e) = mount::mkdir_assert() {
-                panic!("Creating assert directory is not possible : '{e}'. ALAR is not able to proceed further");
-            }
-
-            // In case the filesystem has valuable metadata changes in a log which needs to
-            // be replayed.  Mount the filesystem to replay the log, and unmount it before
-            // re-running xfs_repair
-            mount::mount_path_assert(partition_path);
-            mount::umount(constants::ASSERT_PATH);
-
-            if let Ok(stat) = process::Command::new("xfs_repair")
-                .arg(partition_path)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-            {
-                exit_code = stat.code();
-            }
-
-            /*
-               Because of RedHat9 a second validation needs to be performed
-               as xfs_repair on Ubuntu isn't able to cope with the newer XFS v5 format which is used on RedHat9
-               --> Found unsupported filesystem features
-            */
-
-            if let Ok(value) = process::Command::new("xfs_repair")
-                .args([partition_path])
-                .output()
-            {
-                // unwrap should be safe here as we get a result returned
-                // xfs_repair is throwing an error, thus we need to use stderr
-                let result_value = String::from_utf8(value.stderr).unwrap();
-                if result_value.contains("Found unsupported filesystem features") {
-                    exit_code = Some(0);
+pub(crate) fn cleanup(distro: &Distro, cli_info: &CliInfo) -> Result<()> {
+    if distro.is_ade {
+        debug!("Running ADE cleanup");
+        if distro
+            .partitions
+            .iter()
+            .filter(|lvm| matches!(lvm.logical_volumes, LogicalVolumesType::Some(_)))
+            .count()
+            > 0
+        {
+            info!("LVM clean up at the end of the recovery process.");
+            match ade::ade_lvm_cleanup() {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Clean up phase :: ade_cleanup raised an error : {e}");
                 }
-            }
+            };
+        } else {
+            info!("Clean up at the end of the recovery process.");
+            ade::close_rescueencrypt()?;
         }
-        "fat16" => {
-            log_info("fsck for fat16/vfat");
-            if let Ok(stat) = process::Command::new("fsck.vfat")
-                .args(["-p", partition_path])
-                .status()
-            {
-                exit_code = stat.code();
-            }
-        }
-        _ => {
-            log_info(format!("fsck for {partition_filesystem}").as_str());
-            if let Ok(stat) = process::Command::new(format!("fsck.{partition_filesystem}"))
-                .args(["-p", partition_path])
-                .status()
-            {
-                exit_code = stat.code();
-            }
-        }
-    }
+    } else {
+        distro
+            .partitions
+            .iter()
+            .filter(|lvm| matches!(lvm.logical_volumes, LogicalVolumesType::Some(_)))
+            .for_each(|_| {
+                info!("Cleaning up at the end of the recovery process.");
+                
+                match mount::disable_broken_disk(cli_info) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Clean up phase :: disable_broken_disk raised and error : {e}");
+                    }
+                }
+                mount::rename_oldvg();
 
-    match exit_code {
-        // error 4 is returned by fsck.ext4 only
-        Some(_code @ 4) => {
-            log_error(
-                format!(
-                    "Partition {} can not be repaired in auto mode",
-                    &partition_path
-                )
-                .as_str(),
+                match mount::rescan_host() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Clean up phase :: rescan_host raised an error : {e}");
+                    }
+                }
+            });
+    }
+    Ok(())
+}
+
+pub(crate) fn run_fun(command: &str) -> Result<String> {
+    debug!("Running function: {}", command);
+    let output = Command::new("bash").arg("-c").arg(command).output()?.stdout;
+    Ok(String::from_utf8(output)?)
+}
+
+pub(crate) fn run_cmd(command: &str) -> Result<()> {
+    debug!("Running command: {}", command);
+    let output = Command::new("sh").arg("-c").arg(command).output()?;
+    if !output.status.success() {
+        return Err(anyhow!("Unable to run command {}", command));
+    }
+    Ok(())
+}
+
+pub(crate) fn is_root_user() -> Result<bool> {
+    let id_value = run_fun("id -u")?;
+    Ok(id_value.trim() == "0")
+}
+
+pub(crate) fn download_action_scripts_or(cli_info: &cli::CliInfo) -> Result<()> {
+    if cli_info.download_action_scripts {
+        download_action_scripts()
+    } else if !cli_info.local_action_directory.is_empty() {
+        load_local_action_scripts(&cli_info.local_action_directory)
+    } else {
+        //No remote actions nor local actions are requested. We will use the builtin actions
+        write_builtin_action_scripts()?;
+        Ok(())
+    }
+}
+
+fn download_action_scripts() -> Result<()> {
+    // At first clean
+    if Path::new(constants::ACTION_IMPL_DIR).exists() {
+        if let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
+            println!(
+                "Directory {} can not be removed : '{}'",
+                constants::ACTION_IMPL_DIR,
+                err
             );
-            log_error("Aborting ALAR");
-            process::exit(1);
         }
-        // xfs_repair -n returns 1 if the fs is corrupted.
-        // Also fsck may raise this error but we ignore it as even a normal recover is raising it. FALSE-NEGATIVE
-        Some(_code @ 1) if partition_filesystem == "xfs" => {
-            log_error("A general error occured while trying to recover the device ${root_rescue}.");
-            log_error("Aborting ALAR");
-            process::exit(1);
-        }
-        None => {
-            panic!(
-                "fsck operation terminated by signal error. ALAR is not able to proceed further!"
-            );
-        }
-
-        // Any other error state is not of interest for us
-        _ => {}
     }
+    debug!("Downloading the action scripts from the remote repository");
+    let command = format!("curl -o /tmp/alar2.tar.gz -L {}", constants::TARBALL);
+    run_cmd(&command).context("Archive alar2.tar.gz not downloaded")?;
+    debug!("Downloaded the action scripts from the remote repository");
+    // Expand the action_implementation directory
+    run_cmd(
+        "tar --wildcards --strip-component=2 -xzf /tmp/alar2.tar.gz -C /tmp *action_implementation",
+    )?;
 
-    log_info("File system check finished");
+    Ok(())
 }
 
-pub(crate) fn set_efi_part_number_and_fs(distro: &mut Distro, partition: &str) {
-    let mut new_efi_part = EfiPartT::new();
-    if let EfiPartT::EfiPart(EfiPartition {
-        efi_part_number: ref mut ref_to_number,
-        efi_part_fs: ref mut ref_to_efi_part_fs,
-        efi_part_path: _,
-    }) = new_efi_part
-    {
-        *ref_to_efi_part_fs = get_partition_filesystem_detail(partition);
-        *ref_to_number = get_partition_number_detail(partition);
+fn load_local_action_scripts(directory_source: &str) -> Result<()> {
+    if !Path::new(directory_source).exists() {
+        return Err(anyhow!("Directory {} does not exist", directory_source));
     }
-    distro.efi_part = new_efi_part;
+
+    if Path::new(constants::ACTION_IMPL_DIR).exists() {
+        fs::remove_dir_all(constants::ACTION_IMPL_DIR)
+            .context("Directory ACTION_IMPL_DIR can not be removed")?;
+    }
+    let mut options = fs_extra::dir::CopyOptions::new();
+    options.skip_exist = true;
+    options.copy_inside = true;
+    fs_extra::dir::copy(directory_source, constants::ACTION_IMPL_DIR, &options)
+        .context("Copying the content of the script directory to '/tmp' failed")?;
+    Ok(())
 }
 
-pub(crate) fn set_efi_part_path(distro: &mut Distro) {
-    // set_efi_part_path has to be used only after set_efi_part_number_and_fs has been called
-    let part_number = get_efi_part_number(distro);
-    if let EfiPartT::EfiPart(EfiPartition {
-        efi_part_number: _,
-        efi_part_fs: _,
-        efi_part_path: ref mut ref_to_efi_part_path,
-    }) = distro.efi_part
-    {
-        *ref_to_efi_part_path = format!("{}{}", read_link(constants::RESCUE_DISK), part_number);
-    }
-}
+fn write_builtin_action_scripts() -> Result<()> {
 
-pub(crate) fn get_efi_part_path(distro: &Distro) -> String {
-    let mut path: String = String::from("");
-    if let EfiPartT::EfiPart(EfiPartition {
-        efi_part_number: _,
-        efi_part_fs: _,
-        efi_part_path: ref ref_to_efi_part_path,
-    }) = distro.efi_part
-    {
-        path = ref_to_efi_part_path.to_string();
-    }
-    path
-}
+    fs::create_dir_all(constants::ACTION_IMPL_DIR)
+        .context("Directory ACTION_IMPL_DIR can not be created")?;
+    
 
-pub(crate) fn has_efi_part(distro: &Distro) -> bool {
-    match distro.efi_part {
-        EfiPartT::NoEFI => false,
-        EfiPartT::EfiPart(_) => true,
-    }
-}
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "audit-impl.sh"), constants::AUDIT_IMPL_FILE)
+        .context("Writing audit-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "efifix-impl.sh"), constants::EFIFIX_IMPL_FILE)
+        .context("Writing efifix-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"), constants::FSTAB_IMPL_FILE)
+        .context("Writing fstab-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "grub.awk"), constants::GRUB_AKW_FILE)
+        .context("Writing grub.awk failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "grubfix-impl.sh"), constants::GRUBFIX_IMPL_FILE)
+        .context("Writing grubfix-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "helpers.sh"), constants::HELPERS_SH_FILE)    
+        .context("Writing helpers.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "initrd-impl.sh"), constants::INITRD_IMPL_FILE)
+        .context("Writing initrd-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "kernel-impl.sh"), constants::KERNEL_IMPL_FILE)
+        .context("Writing kernel-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "safe-exit.sh"), constants::SAFE_EXIT_FILE)
+        .context("Writing safe-exit.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "serialconsole-impl.sh"), constants::SERIALCONSOLE_IMPL_FILE)
+        .context("Writing serialconsole-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "test-impl.sh"), constants::TEST_IMPL_FILE)
+        .context("Writing test-impl.sh failed")?;
 
-pub(crate) fn get_efi_part_fs(distro: &Distro) -> String {
-    let mut fs: String = String::from("");
-    if let EfiPartT::EfiPart(EfiPartition {
-        efi_part_number: _,
-        efi_part_fs: ref ref_to_efi_part_fs,
-        efi_part_path: _,
-    }) = distro.efi_part
-    {
-        fs = ref_to_efi_part_fs.to_string();
-    }
-    fs
-}
 
-fn get_efi_part_number(distro: &Distro) -> u8 {
-    let mut number: u8 = 0;
-    if let EfiPartT::EfiPart(EfiPartition {
-        efi_part_number: internal_number,
-        efi_part_fs: _,
-        efi_part_path: _,
-    }) = distro.efi_part
-    {
-        number = internal_number;
-    }
-    number
+    Ok(())
 }
