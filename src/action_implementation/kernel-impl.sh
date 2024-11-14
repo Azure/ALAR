@@ -34,7 +34,7 @@ fi
 if [[ ${isSuse} == "true" ]]; then
 	# verify whether GRUB_DEFAULT is available
 	grep -q 'GRUB_DEFAULT=.*' /etc/default/grub || echo 'GRUB_DEFAULT=saved' >>/etc/default/grub
- 
+
 	# set to previous kernel
 	sed -i -e 's/GRUB_DEFAULT=.*/GRUB_DEFAULT="1>2"/' /etc/default/grub
 	grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -43,8 +43,8 @@ fi
 if [[ ${isAzureLinux} == "true" ]]; then
 	# verify whether GRUB_DEFAULT is available
 	grep -q 'GRUB_DEFAULT=.*' /etc/default/grub || echo 'GRUB_DEFAULT=saved' >>/etc/default/grub
-	
-        # set to previous kernel
+
+	# set to previous kernel
 	sed -i -e 's/GRUB_DEFAULT=.*/GRUB_DEFAULT=2/' /etc/default/grub
 	grub2-mkconfig -o /boot/grub2/grub.cfg
 fi
