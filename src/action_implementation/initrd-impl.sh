@@ -59,11 +59,6 @@ recover_ubuntu() {
 recover_redhat() {
 	kernel_version=$(sed -e "s/kernel-//" <<<$(rpm -q kernel --last | head -n 1 | cut -f1 -d' '))
 
-	if [[ "$isAzureLinux" == "true" ]]; then
-		# On AzureLinux we need to remove the architecture part
-		kernel_version="${kernel_version//.x86_64/}"
-	fi
-
 	depmod ${kernel_version}
 	# Get sure that all required modules are loaded
 	dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initramfs-${kernel_version}.img ${kernel_version}
@@ -81,7 +76,7 @@ recover_azurelinux() {
 
 	depmod ${kernel_version}
 	# Get sure that all required modules are loaded
-	if test initrd.img*; then 
+	if test initrd.img*; then
 		# AzureLinux 2.0
 		dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initrd.img-${kernel_version} ${kernel_version}
 	else
