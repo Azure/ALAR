@@ -22,7 +22,7 @@ if [[ ${isRedHat} == "true" ]]; then
 	echo "kernel.sysrq = 1" >>/etc/sysctl.conf
 fi
 
-if [[ ${isUbuntu} == "true" ]]; then
+if [[ ${isUbuntu} == "true" || ${isDebian}  == "true" ]]; then
 	# verify whether GRUB_DEFAULT is available
 	grep -q 'GRUB_DEFAULT=.*' /etc/default/grub || echo 'GRUB_DEFAULT=saved' >>/etc/default/grub
 
