@@ -107,6 +107,13 @@ pub fn set_environment(distro: &distro::Distro) {
             debug!("Subtype: {distrosubtype}");
             env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
         }
+        dkind if dkind.distro_type == distro::DistroType::Debian => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isDebian", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
         _ => {
             env::set_var("DISTROTYPE", "UNKNOWN");
             env::set_var("DISTROSUBTYPE", "UNKNOWN");

@@ -29,7 +29,7 @@ alter_serial_properties() {
 }
 
 serial_fix_suse_redhat () {
-    if [[ "$isRedHat6" == "true" ]]; then
+    if [[ ${DISTROVERSION} =~ 6 ]]; then 
         echo "Configuring the serialconsole for RedHat 6.x is not implemented"
         exit 1
     fi
