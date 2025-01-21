@@ -11,29 +11,36 @@ resolv-after() {
 }
 
 recover_redhat() {
-    resolv-pre
-    yum install gdisk -y
-    device=$(cut -c -$((${#boot_part_path} - 1)) <<<$boot_part_path)
-    if [[ "$isRedHat6" == "true" ]]; then
-        grub-install $device
-        # update-grub is not available on version 6.x so the functionality is limitted
-    else
-        sgdisk -e $device
-        grub2-install --target i386-pc $device
-        # Generate both config files.
-        grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
-        grub2-mkconfig -o /boot/grub2/grub.cfg
+    if [[ "${DISTROVERSION}" =~ 6 ]]; then
+        echo "RedHat 6.x is not supported."
+        exit 1
+    fi
 
-   fi
+    resolv-pre
+    yum install gdisk -yi
+    sgdisk -e "$recover_disk_path"
+    grub2-install --target i386-pc "$recover_disk_path"
+
+    if [[ $? -ne 0 ]]; then
+        echo "Failed to install grub2 on $recover_disk_path"
+        echo "Do you use it on an GEN2 disk?"
+        exit 1
+    fi
+    # Generate both config files.
+    # TODO - check if we need to generate both. Newer distro versiondon't require this anymore. Let us create a backup therefore.
+    cp /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg.bak
+    grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
+    grub2-mkconfig -o /boot/grub2/grub.cfg
+
     resolv-after
 }
 
 recover_suse() {
     resolv-pre
     zypper install -y gptfdisk
-    device=$(cut -c -$((${#boot_part_path} - 1)) <<<$boot_part_path)
-    sgdisk -e $device
-    grub2-install $device
+    #device=$(cut -c -$((${#recover_disk_path} - 1)) <<<"$recover_disk_path")
+    sgdisk -e "${RECOVER_DISK_PATH}"
+    grub2-install "{$RECOVER_DISK_PATH}"
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
@@ -42,12 +49,30 @@ recover_suse() {
 recover_ubuntu() {
     resolve-pre
 
-    apt install gdisk -y
-    apt-get install -y --reinstall grub2-common grub-pc
-    device=$(cut -c -$((${#boot_part_path} - 1)) <<<$boot_part_path)
-    sgdisk -e $device
-    grub-install $device
+    apt-get install gdisk -y
+    apt-get install -y --reinstall -o Dpkg::Options::="--force-confold" grub2-common grub-pc
+    #device=$(cut -c -$((${#recover_disk_path} - 1)) <<<"$recover_disk_path")
+    sgdisk -e "${RECOVER_DISK_PATH}"
+    grub-install "${RECOVER_DISK_PATH}"
     update-grub
+
+    resolv-after
+}
+
+recover_azurelinux() {
+    resolv-pre
+
+    tdnf install gdisk -y
+    tdnf install grub2-pc -y
+    sgdisk -e "${RECOVER_DISK_PATH}"
+    grub2-install --target i386-pc "${RECOVER_DISK_PATH}"
+
+    if [[ $? -ne 0 ]]; then
+        echo "Failed to install grub2 on ${RECOVER_DISK_PATH}"
+        echo "Do you use it on an GEN2 disk?"
+        exit 1
+    fi
+    grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
 }
@@ -60,8 +85,12 @@ if [[ "$isSuse" == "true" ]]; then
     recover_suse
 fi
 
-if [[ "$isUbuntu" == "true" ]]; then
+if [[ "$isUbuntu" == "true" || "$isDebian" == "true" ]]; then
     recover_ubuntu
+fi
+
+if [[ "$isAzureLinux" == "true" ]]; then
+    recover_azurelinux
 fi
 
 exit 0
