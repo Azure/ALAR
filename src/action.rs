@@ -1,4 +1,4 @@
-use crate::{cli, constants, distro, helper};
+use crate::{constants, helper};
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
