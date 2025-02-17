@@ -48,6 +48,7 @@ recover_suse() {
 recover_ubuntu() {
     resolve-pre
 
+    apt-get update
     apt-get install gdisk -y
     apt-get install -y --reinstall -o Dpkg::Options::="--force-confold" grub2-common grub-pc
     sgdisk -e "${RECOVER_DISK_PATH}"
