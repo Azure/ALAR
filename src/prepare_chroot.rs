@@ -1,57 +1,201 @@
+use std::collections::HashMap;
+use std::env;
 use std::fs;
 use crate::cli;
 use crate::constants;
 use crate::distro;
 use crate::distro::LogicalVolumesType;
+use crate::distro::PartInfo;
 use crate::helper;
 use crate::mount;
 use anyhow::Result;
 use log::debug;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
-    mount_required_partitions(distro, cli)?;
+
+    let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
+
+    mount_required_partitions(distro, cli, &mut partition_details)?;
     mkdir_support_filesystems()?;
     mount_support_filesystems()?;
+    set_environment(distro, cli, partition_details);
     Ok(())
 }
-fn mount_required_partitions(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
-    let os_partition = distro
+
+fn convert_bool(state: bool) -> String {
+    if state {
+        "true".to_string()
+    } else {
+        "false".to_string()
+    }
+}
+
+fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
+    match distro.distro_name_version.name.as_str() {
+        s if s.contains("Ubuntu") => distro::DistroKind {
+            distro_type: distro::DistroType::Ubuntu,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("Debian") => distro::DistroKind {
+            distro_type: distro::DistroType::Debian,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("Red Hat") => distro::DistroKind {
+            distro_type: distro::DistroType::RedHat,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("Oracle Linux") => distro::DistroKind {
+            distro_type: distro::DistroType::RedHat,
+            distro_subtype: distro::DistroSubType::OracleLinux,
+        },
+        s if s.contains("SUSE") => distro::DistroKind {
+            distro_type: distro::DistroType::Suse,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("Azure Linux") => distro::DistroKind {
+            distro_type: distro::DistroType::AzureLinux,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("Linux Mariner") => distro::DistroKind {
+            distro_type: distro::DistroType::AzureLinux,
+            distro_subtype: distro::DistroSubType::None,
+        },
+        s if s.contains("AlmaLinux") => distro::DistroKind {
+            distro_type: distro::DistroType::RedHat,
+            distro_subtype: distro::DistroSubType::AlmaLinux,
+        },
+        s if s.contains("Rocky Linux") => distro::DistroKind {
+            distro_type: distro::DistroType::RedHat,
+            distro_subtype: distro::DistroSubType::RockyLinux,
+        },
+        s if s.contains("CentOS") => distro::DistroKind {
+            distro_type: distro::DistroType::RedHat,
+            distro_subtype: distro::DistroSubType::CentOS,
+        },
+        _ => distro::DistroKind {
+            distro_type: distro::DistroType::Undefined,
+            distro_subtype: distro::DistroSubType::None,
+        },
+    }
+}
+
+pub fn set_environment(distro: &distro::Distro, cli_info: &cli::CliInfo, partitions: HashMap<&str, &PartInfo>) {
+    let distroname = &distro.distro_name_version.name;
+    let distroversion = &distro.distro_name_version.version_id;
+    let distrokind = get_distro_kind(distro);
+    debug!("Distro kind: {:?}", distrokind);
+
+    // some default values which can be always of help
+    env::set_var("DISTRONAME", format!("'{}'", distroname.as_str()));
+    env::set_var("DISTROVERSION", distroversion.as_str());
+    env::set_var("isLVM", convert_bool(distro.is_lvm));
+    env::set_var("RECOVER_DISK_PATH", helper::get_recovery_disk_path(cli_info));
+    env::set_var("OS_PARTITION", partitions.get("os").unwrap().number.to_string());
+    if partitions.contains_key("boot") {
+        env::set_var("BOOT_PARTITION", partitions.get("boot").unwrap().number.to_string());
+        env::set_var("boot_part_path", format!("{}{}",helper::get_recovery_disk_path(cli_info), partitions.get("boot").unwrap().number.to_string()));
+    }
+    if partitions.contains_key("efi") {
+        env::set_var("EFI_PARTITION", partitions.get("efi").unwrap().number.to_string());
+        env::set_var("efi_part_path", format!("{}{}",helper::get_recovery_disk_path(cli_info), partitions.get("efi").unwrap().number.to_string()));
+    }
+
+
+    // Remove this variable because of security reasons
+    env::remove_var("SUDO_COMMAND");
+
+    debug!("Distro name: {distroname}");
+    debug!("Distro version: {distroversion}");
+
+    match distrokind {
+        dkind if dkind.distro_type == distro::DistroType::RedHat => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isRedHat", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
+        dkind if dkind.distro_type == distro::DistroType::Ubuntu => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isUbuntu", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
+        dkind if dkind.distro_type == distro::DistroType::Suse => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isSuse", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
+        dkind if dkind.distro_type == distro::DistroType::AzureLinux => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isAzureLinux", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
+        dkind if dkind.distro_type == distro::DistroType::Debian => {
+            debug!("Type {} detected", dkind.distro_type);
+            env::set_var("isDebian", convert_bool(true));
+            let distrosubtype = dkind.distro_subtype;
+            debug!("Subtype: {distrosubtype}");
+            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+        }
+        _ => {
+            env::set_var("DISTROTYPE", "UNKNOWN");
+            env::set_var("DISTROSUBTYPE", "UNKNOWN");
+        }
+    }
+}
+
+
+
+fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo, partitions: &mut HashMap<&str,&'a PartInfo>) -> Result<()> {
+    let os_part = distro
         .partitions
         .iter()
         .find(|partition| partition.contains_os)
         .unwrap(); // unwrap is safe as we have always an OS partition
+    partitions.insert( "os",  os_part);
     
-    let efi_partition = distro
+    let efi_part = distro
         .partitions
         .iter()
         .find(|partition| partition.part_type == "EF00");
+    if let Some(efi_part) = efi_part {      
+        partitions.insert("efi", efi_part);
+    }
     
-    let boot_partition = distro
+    let boot_part = distro
         .partitions
         .iter()
         .find(|partition| !partition.contains_os && partition.part_type != "EF00");
-
+    if let Some(boot_part) = boot_part {      
+        partitions.insert("boot", boot_part);
+    }
 
     // A closure is required to build the correct path for the rescue disk
     let cl_get_rescue_disk_path = || -> String {
         if distro.is_ade {
             constants::ADE_OSENCRYPT_PATH.to_string()
         } else {
-            format!("{}{}",helper::get_recovery_disk_path(cli), os_partition.number)
+            format!("{}{}",helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
         }
     };
 
     debug!("rescue_disk_path : {}", cl_get_rescue_disk_path());
-    debug!("os_partition : {:?}", os_partition);
-    debug!("efi_partition : {:?}", efi_partition);
-    debug!("boot_partition : {:?}", boot_partition);
+    debug!("os_partition : {:?}", partitions.get("os"));
+    debug!("efi_partition : {:?}", partitions.get("efi"));
+    debug!("boot_partition : {:?}", partitions.get("boot"));
 
     // Create the rescue root directory
     mount::mkdir_rescue_root()?;
 
     // Mount each lv if we have them available
     // This does mount ADE and non ADE partitions/lvs
-    if let LogicalVolumesType::Some(lv_set) = &os_partition.logical_volumes {
+    if let LogicalVolumesType::Some(lv_set) = &partitions.get("os").unwrap().logical_volumes {
         // First mount the rootlv, otherwise we get mount errors if we continue with the wrong order
         lv_set
             .iter()
@@ -117,8 +261,8 @@ fn mount_required_partitions(distro: &distro::Distro, cli: &cli::CliInfo) -> Res
 
     // The order is again important. First /boot then /boot/efi
     // Verify also if we have a boot partition, Ubuntu doesn't have one for example
-    if boot_partition.is_some() {
-        if let Some(boot_partition) = boot_partition {
+    if partitions.get("boot").is_some() {
+        if let Some(boot_partition) = partitions.get("boot") {
             mount::mount(
                 &format!("{}{}", rescue_disk_path, boot_partition.number),
                 constants::RESCUE_ROOT_BOOT,
@@ -129,8 +273,8 @@ fn mount_required_partitions(distro: &distro::Distro, cli: &cli::CliInfo) -> Res
     }
 
     // Also be carefull with the efi partition, not all distros have one
-    if efi_partition.is_some() {
-        if let Some(efi_partition) = efi_partition {
+    if partitions.get("efi").is_some() {
+        if let Some(efi_partition) = partitions.get("efi") {
             mount::mount(
                 &format!("{}{}", rescue_disk_path, efi_partition.number),
                 constants::RESCUE_ROOT_BOOT_EFI,
