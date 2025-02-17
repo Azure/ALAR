@@ -17,12 +17,12 @@ recover_redhat() {
     fi
 
     resolv-pre
-    yum install gdisk -yi
-    sgdisk -e "$recover_disk_path"
-    grub2-install --target i386-pc "$recover_disk_path"
+    yum install gdisk -y
+    sgdisk -e "${RECOVER_DISK_PATH}"
+    grub2-install --target i386-pc "${RECOVER_DISK_PATH}"
 
     if [[ $? -ne 0 ]]; then
-        echo "Failed to install grub2 on $recover_disk_path"
+        echo "Failed to install grub2 on ${RECOVER_DISK_PATH}"
         echo "Do you use it on an GEN2 disk?"
         exit 1
     fi
@@ -38,7 +38,6 @@ recover_redhat() {
 recover_suse() {
     resolv-pre
     zypper install -y gptfdisk
-    #device=$(cut -c -$((${#recover_disk_path} - 1)) <<<"$recover_disk_path")
     sgdisk -e "${RECOVER_DISK_PATH}"
     grub2-install "{$RECOVER_DISK_PATH}"
     grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -51,7 +50,6 @@ recover_ubuntu() {
 
     apt-get install gdisk -y
     apt-get install -y --reinstall -o Dpkg::Options::="--force-confold" grub2-common grub-pc
-    #device=$(cut -c -$((${#recover_disk_path} - 1)) <<<"$recover_disk_path")
     sgdisk -e "${RECOVER_DISK_PATH}"
     grub-install "${RECOVER_DISK_PATH}"
     update-grub
