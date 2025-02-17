@@ -7,7 +7,7 @@ resolv-pre() {
 
 # restore the originail resolv.conf
 resolv-after() {
-    mv /etc/resolv.conf.org /etc/resolve.conf
+    mv /etc/resolv.conf.org /etc/resolv.conf
 }
 
 recover_redhat() {
