@@ -7,11 +7,9 @@ use crate::helper;
 use crate::mount;
 use anyhow::Result;
 use log::debug;
-use log::info;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::option;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
     let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
