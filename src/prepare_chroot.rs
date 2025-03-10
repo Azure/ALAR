@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::env;
-use std::fs;
 use crate::cli;
 use crate::constants;
 use crate::distro;
@@ -10,9 +7,13 @@ use crate::helper;
 use crate::mount;
 use anyhow::Result;
 use log::debug;
+use log::info;
+use std::collections::HashMap;
+use std::env;
+use std::fs;
+use std::option;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
-
     let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
 
     mount_required_partitions(distro, cli, &mut partition_details)?;
@@ -48,7 +49,7 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
             distro_type: distro::DistroType::RedHat,
             distro_subtype: distro::DistroSubType::OracleLinux,
         },
-        s if s.contains("SUSE") => distro::DistroKind {
+        s if s.contains("SLES") => distro::DistroKind {
             distro_type: distro::DistroType::Suse,
             distro_subtype: distro::DistroSubType::None,
         },
@@ -79,7 +80,11 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
     }
 }
 
-pub fn set_environment(distro: &distro::Distro, cli_info: &cli::CliInfo, partitions: HashMap<&str, &PartInfo>) {
+pub fn set_environment(
+    distro: &distro::Distro,
+    cli_info: &cli::CliInfo,
+    partitions: HashMap<&str, &PartInfo>,
+) {
     let distroname = &distro.distro_name_version.name;
     let distroversion = &distro.distro_name_version.version_id;
     let distrokind = get_distro_kind(distro);
@@ -89,17 +94,42 @@ pub fn set_environment(distro: &distro::Distro, cli_info: &cli::CliInfo, partiti
     env::set_var("DISTRONAME", format!("'{}'", distroname.as_str()));
     env::set_var("DISTROVERSION", distroversion.as_str());
     env::set_var("isLVM", convert_bool(distro.is_lvm));
-    env::set_var("RECOVER_DISK_PATH", helper::get_recovery_disk_path(cli_info));
-    env::set_var("OS_PARTITION", partitions.get("os").unwrap().number.to_string());
+    env::set_var(
+        "RECOVER_DISK_PATH",
+        helper::get_recovery_disk_path(cli_info),
+    );
+    env::set_var(
+        "OS_PARTITION",
+        partitions.get("os").unwrap().number.to_string(),
+    );
     if partitions.contains_key("boot") {
-        env::set_var("BOOT_PARTITION", partitions.get("boot").unwrap().number.to_string());
-        env::set_var("boot_part_path", format!("{}{}",helper::get_recovery_disk_path(cli_info), partitions.get("boot").unwrap().number.to_string()));
+        env::set_var(
+            "BOOT_PARTITION",
+            partitions.get("boot").unwrap().number.to_string(),
+        );
+        env::set_var(
+            "boot_part_path",
+            format!(
+                "{}{}",
+                helper::get_recovery_disk_path(cli_info),
+                partitions.get("boot").unwrap().number.to_string()
+            ),
+        );
     }
     if partitions.contains_key("efi") {
-        env::set_var("EFI_PARTITION", partitions.get("efi").unwrap().number.to_string());
-        env::set_var("efi_part_path", format!("{}{}",helper::get_recovery_disk_path(cli_info), partitions.get("efi").unwrap().number.to_string()));
+        env::set_var(
+            "EFI_PARTITION",
+            partitions.get("efi").unwrap().number.to_string(),
+        );
+        env::set_var(
+            "efi_part_path",
+            format!(
+                "{}{}",
+                helper::get_recovery_disk_path(cli_info),
+                partitions.get("efi").unwrap().number.to_string()
+            ),
+        );
     }
-
 
     // Remove this variable because of security reasons
     env::remove_var("SUDO_COMMAND");
@@ -150,29 +180,31 @@ pub fn set_environment(distro: &distro::Distro, cli_info: &cli::CliInfo, partiti
     }
 }
 
-
-
-fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo, partitions: &mut HashMap<&str,&'a PartInfo>) -> Result<()> {
+fn mount_required_partitions<'a>(
+    distro: &'a distro::Distro,
+    cli: &cli::CliInfo,
+    partitions: &mut HashMap<&str, &'a PartInfo>,
+) -> Result<()> {
     let os_part = distro
         .partitions
         .iter()
         .find(|partition| partition.contains_os)
         .unwrap(); // unwrap is safe as we have always an OS partition
-    partitions.insert( "os",  os_part);
-    
+    partitions.insert("os", os_part);
+
     let efi_part = distro
         .partitions
         .iter()
         .find(|partition| partition.part_type == "EF00");
-    if let Some(efi_part) = efi_part {      
+    if let Some(efi_part) = efi_part {
         partitions.insert("efi", efi_part);
     }
-    
+
     let boot_part = distro
         .partitions
         .iter()
         .find(|partition| !partition.contains_os && partition.part_type != "EF00");
-    if let Some(boot_part) = boot_part {      
+    if let Some(boot_part) = boot_part {
         partitions.insert("boot", boot_part);
     }
 
@@ -181,7 +213,11 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
         if distro.is_ade {
             constants::ADE_OSENCRYPT_PATH.to_string()
         } else {
-            format!("{}{}",helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
+            format!(
+                "{}{}",
+                helper::get_recovery_disk_path(cli),
+                partitions.get("os").unwrap().number
+            )
         }
     };
 
@@ -201,10 +237,15 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
             .iter()
             .filter(|root_lv| root_lv.name == "rootvg-rootlv")
             .for_each(|root_lv| {
+                let options = if root_lv.fstype == "xfs" {
+                    "nouuid"
+                } else {
+                    ""
+                };
                 match mount::mount(
                     &format!("{}{}", "/dev/mapper/", root_lv.name),
                     constants::RESCUE_ROOT,
-                    "",
+                    options,
                     false,
                 ) {
                     Ok(()) => {}
@@ -219,10 +260,9 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
             });
         lv_set
             .iter()
-            .filter(|volume| {
-                volume.name != "rootvg-rootlv" && volume.name != "rootvg-tmplv" 
-            })
+            .filter(|volume| volume.name != "rootvg-rootlv" && volume.name != "rootvg-tmplv")
             .for_each(|lv| {
+                let options = if lv.fstype == "xfs" { "nouuid" } else { "" };
                 match mount::mount(
                     &format!("{}{}", "/dev/mapper/", lv.name),
                     &format!(
@@ -234,7 +274,7 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
                             .strip_suffix("lv")
                             .unwrap()
                     ),
-                    "",
+                    options,
                     false,
                 ) {
                     Ok(()) => {}
@@ -248,12 +288,24 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
             });
     } else {
         // RAW disks gets mounted here
-        mount::mount(
-            &cl_get_rescue_disk_path(),
-            constants::RESCUE_ROOT,
-            "",
-            false,
-        )?;
+        // mind the XFS double UUID issue
+        let command = format!("lsblk -nf -o FSTYPE {}", cl_get_rescue_disk_path());
+        let filesystem = helper::run_fun(&command)?;
+        if filesystem.trim() == "xfs" {
+            mount::mount(
+                &cl_get_rescue_disk_path(),
+                constants::RESCUE_ROOT,
+                "nouuid",
+                false,
+            )?;
+        } else {
+            mount::mount(
+                &cl_get_rescue_disk_path(),
+                constants::RESCUE_ROOT,
+                "",
+                false,
+            )?;
+        }
     }
 
     // Even if we have an ADE encrpted disk the boot partition and the efi partition are not encrypted
@@ -262,13 +314,23 @@ fn mount_required_partitions<'a>(distro: &'a distro::Distro, cli: &cli::CliInfo,
     // The order is again important. First /boot then /boot/efi
     // Verify also if we have a boot partition, Ubuntu doesn't have one for example
     if partitions.get("boot").is_some() {
+        // mind the XFS double UUID issue
         if let Some(boot_partition) = partitions.get("boot") {
-            mount::mount(
-                &format!("{}{}", rescue_disk_path, boot_partition.number),
-                constants::RESCUE_ROOT_BOOT,
-                "",
-                false,
-            )?;
+            if partitions.get("boot").unwrap().fstype == "xfs" {
+                mount::mount(
+                    &format!("{}{}", rescue_disk_path, boot_partition.number),
+                    constants::RESCUE_ROOT_BOOT,
+                    "nouuid",
+                    false,
+                )?;
+            } else {
+                mount::mount(
+                    &format!("{}{}", rescue_disk_path, boot_partition.number),
+                    constants::RESCUE_ROOT_BOOT,
+                    "",
+                    false,
+                )?;
+            }
         }
     }
 
