@@ -68,7 +68,6 @@ fn main() -> Result<()> {
         helper::cleanup(&distro, &cli_info)?;
         process::exit(1);
     }
-    action::set_environment(&distro);
 
     // Run the repair scripts
     if cli_info.actions.contains(constants::CHROOT_CLI) {

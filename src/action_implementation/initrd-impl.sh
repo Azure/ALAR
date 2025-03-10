@@ -76,12 +76,15 @@ recover_azurelinux() {
 
 	depmod ${kernel_version}
 	# Get sure that all required modules are loaded
-	if test initrd.img*; then
+	if test /boot/initrd.img*; then
 		# AzureLinux 2.0
-		dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initrd.img-${kernel_version} ${kernel_version}
+		# Adding the drivers manually shouldn't be necessary as the dracut-hyperv package ensures that the drivers are included in the initrd.
+		# Bu lets us be safe and add them manually
+		dracut -f -H --add-drivers 'xen-scsifront xen-blkfront xen-acpi-processor xen-evtchn xen-gntalloc xen-gntdev xen-privcmd xen-pciback xenfs hv_utils hv_vmbus hv_storvsc hv_netvsc hv_sock hv_balloon virtio_blk virtio-rng virtio_console virtio_crypto virtio_mem vmw_vsock_virtio_transport vmw_vsock_virtio_transport_common 9pnet_virtio vrf' /boot/initrd-${kernel_version} ${kernel_version}
 	else
 		# AzureLinux 3.0
-		dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initramfs-${kernel_version}.img ${kernel_version}
+		# No hyperv drivers required. They are already included in the kernel.
+		dracut -f -H /boot/initramfs-${kernel_version}.img ${kernel_version}
 	fi
 	# Recreate the the grub.cfg, it could be the initrd line is missing
 	grub2-mkconfig -o /boot/grub2/grub.cfg

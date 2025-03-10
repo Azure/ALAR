@@ -103,7 +103,25 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
             // In case the filesystem has valuable metadata changes in a log which needs to
             // be replayed mount the filesystem to replay the log, and unmount it before
             // re-running xfs_repair
-            mount(partition_path, constants::ASSERT_PATH, "nouuid", false)?;
+            //mount(partition_path, constants::ASSERT_PATH, "nouuid", false)?;
+            match mount(partition_path, constants::ASSERT_PATH, "nouuid", true) {
+                Ok(_) => {}
+                Err(_) => {
+                    // Let's try to check the FS first. Maybe this helps to overcome the mount issue
+                    if let Ok(stat) = process::Command::new("xfs_repair")
+                        .arg(partition_path)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                    {
+                        exit_code = stat.code();
+                        debug!("Inside fsck for XFS first mount : xfs_repair returned with exit code: {:?}", exit_code);
+                    }
+                    error!("Stopping ALAR. Please do a manual recover of the FS for disk {partition_path}. Error code of xfs_repair: {:?}", exit_code);
+                    umount(constants::ASSERT_PATH, false)?;
+                    process::exit(1);
+                }
+            }
             umount(constants::ASSERT_PATH, false)?;
 
             if let Ok(stat) = process::Command::new("xfs_repair")
@@ -113,6 +131,7 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
                 .status()
             {
                 exit_code = stat.code();
+                 debug!("Inside second fsck for XFS : xfs_repair returned with exit code: {:?}", exit_code);
             }
 
             /*
@@ -220,11 +239,11 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
     });
 
     //helper::run_cmd("pvscan; vgscan --mknodes; udevadm trigger")?;
-    helper::run_cmd("pvscan;")?;
-    let voulme_groups = helper::run_fun("vgs --noheadings -o vg_name;")?;
+    helper::run_cmd("pvscan --cache")?;
+    let volume_groups = helper::run_fun("pvs --noheadings -o vg_name")?;
 
     // If we have found the rescuevg to be available then we can skip the import
-    if voulme_groups.contains("rescuevg") {
+    if volume_groups.contains("rescuevg") {
         return Ok(());
     }
 
@@ -234,7 +253,7 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
     if Path::new("/dev/rootvg").is_dir() {
         // Let us figure out whether there are more than two rootvg's
         // If there are more than two rootvg's we need to do the import
-        let result_string = helper::run_fun(r"pvscan  2>&1 | grep -v 'WARNING\|duplicate\|Total'")?;
+        let result_string = helper::run_fun(r"pvs -a --noheadings -o vg_name")?;
         let mut rootvg_count = 0;
 
         result_string.lines().for_each(|line| {
@@ -249,7 +268,7 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
             debug!("Only one rootvg found. Skipping the import.");
             Ok(())
         } else {
-        debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
+            debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
             let disk_path = format!(
                 "{}{}",
                 helper::get_recovery_disk_path(cli_info),

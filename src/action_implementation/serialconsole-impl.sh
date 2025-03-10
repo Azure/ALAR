@@ -48,9 +48,9 @@ GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
 GRUB_DEFAULT=saved
 GRUB_DISABLE_SUBMENU=true
 GRUB_TERMINAL="serial"
+GRUB_SERIAL_COMMAND="serial --speed=19600 --unit=0 --word=8 --parity=no --stop=1"
 GRUB_CMDLINE_LINUX="USE_BY_UUID_DEVICE_NAMES=1 rootdelay=300 multipath=off net.ifnames=0 console=ttyS0,115200n8 earlyprintk=ttyS0,115200 console=tty1 earlyprintk=ttyS1"
 GRUB_DISABLE_RECOVERY="true"
-GRUB_SERIAL_COMMAND="serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1"
 EOF
     fi
     
