@@ -26,10 +26,7 @@ recover_redhat() {
         echo "Do you use it on an GEN2 disk?"
         exit 1
     fi
-    # Generate both config files.
-    # TODO - check if we need to generate both. Newer distro versiondon't require this anymore. Let us create a backup therefore.
-    cp /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg.bak
-    grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
+    # We fixed the clasic boot loader, no need to fix the EFI boot loader part.
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
@@ -37,6 +34,7 @@ recover_redhat() {
 
 recover_suse() {
     resolv-pre
+
     zypper install -y gptfdisk
     sgdisk -e "${RECOVER_DISK_PATH}"
     grub2-install "{$RECOVER_DISK_PATH}"
@@ -62,9 +60,12 @@ recover_azurelinux() {
     resolv-pre
 
     tdnf install gdisk -y
+    tdnf reinstall gdisk -y
     tdnf install grub2-pc -y
+    tdnf reinstall grub2-pc -y
     sgdisk -e "${RECOVER_DISK_PATH}"
     grub2-install --target i386-pc "${RECOVER_DISK_PATH}"
+    grub2-mkconfig -o /boot/grub2/grub.cfg
 
     if [[ $? -ne 0 ]]; then
         echo "Failed to install grub2 on ${RECOVER_DISK_PATH}"
