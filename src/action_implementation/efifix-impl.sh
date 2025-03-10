@@ -23,12 +23,14 @@ recover_redhat() {
     umount $efi_part_path
     mkfs.vfat -F16 $efi_part_path
     mount $efi_part_path /boot/efi
-    yum reinstall -y grub2-efi shim
+    yum reinstall -y grub2-efi-x64 shim-x64
+    yum reinstall grub2-common -y
+    
+    grub2-mkconfig -o /boot/grub2/grub.cfg
     grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    read -ra EFI_DISK <<<$(blkid $efi_part_path)
-    new_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<$i; done)
-    sed -i "s/$uuid_to_be_replaced/$new_uuid/" /etc/fstab
+    new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
+    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
     
     resolv-after
 }
@@ -78,7 +80,7 @@ recover_azurelinux() {
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
     read -ra EFI_DISK_INFO <<<$(blkid $efi_part_path)
     new_uuid=$(for i in "${EFI_DISK_INFO[@]}"; do grep ^UUID= <<<$i; done)
-    sed -i "s/$uuid_to_be_replaced/$new_uuid/" /etc/fstab
+    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
 
@@ -92,20 +94,36 @@ recover_azurelinux() {
 
 recover_suse() {
     resolv-pre
-    device=$(cut -c -$((${#boot_part_path} - 1)) <<<$boot_part_path)
+
+    efi_part_path=$(findmnt -n -o SOURCE /boot/efi)
+    if [[ -z ${efi_part_path}  ]]; then 
+        echo "No EFI partition found"
+        echo "Aborting! Are you running it on a GEN1 image?"
+        exit 1
+    fi
+
     umount $efi_part_path
     mkfs.vfat -F16 $efi_part_path
     mount $efi_part_path /boot/efi
-    zypper remove -y grub2
-    zypper install -y grub2
+    zypper remove -y grub2-x86_64-efi
+    zypper install -y grub2-x86_64-efi
+    zypper remove -y shim
     zypper install -y shim
     cp /etc/default/grub.rpmsave /etc/default/grub
     shim-install
-    grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "sles")/grub.cfg
+    
+
+    boot_uuid=$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))
+echo "search --no-floppy --fs-uuid --set=dev $boot_uuid" >  /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "sles")/grub.cfg   
+echo 'set prefix=($dev)/grub2
+export $prefix
+configfile $prefix/grub.cfg' >>  /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "sles")/grub.cfg
+
+    
+    grub2-mkconfig -o /boot/grub2/grub.cfg
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    read -ra EFI_DISK <<<$(blkid $efi_part_path)
-    new_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<$i; done)
-    sed -i "s/$uuid_to_be_replaced/$new_uuid/" /etc/fstab
+    new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
+    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
 
     resolv-after
 }
@@ -122,7 +140,7 @@ recover_ubuntu() {
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
     read -ra EFI_DISK <<<$(blkid $efi_part_path)
     new_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<$i; done)
-    sed -i "s/$uuid_to_be_replaced/$new_uuid/" /etc/fstab
+    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
 
     resolv-after
 }
