@@ -3,6 +3,23 @@
 IMPL_DIR=`dirname $0`
 . $IMPL_DIR/helpers.sh
 
+function CheckForAzureLinux() {
+        grep -q -E "ID=mariner|ID=azurelinux" /etc/os-release
+        if [[ $? -eq 0 ]]; then
+                echo "AzureLinux isn't supported by the auditd script"
+                exit
+        fi
+        # otherwise we continue
+}
+
+# Verify if this script is executed on AzureLinux
+# This script doesn't support AzureLinux at the moment
+
+CheckForAzureLinux
+
+# if no AzureLinux got detected we continue
+# otherwise the script got stopped
+
 function check_space_for_mount() {
   # Since we must be prepared to work in a rescue environment, we cannot assume the disk is mounted.
   # Pull the log location from the auditd config
