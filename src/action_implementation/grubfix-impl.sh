@@ -65,7 +65,6 @@ recover_azurelinux() {
     tdnf reinstall grub2-pc -y
     sgdisk -e "${RECOVER_DISK_PATH}"
     grub2-install --target i386-pc "${RECOVER_DISK_PATH}"
-    grub2-mkconfig -o /boot/grub2/grub.cfg
 
     if [[ $? -ne 0 ]]; then
         echo "Failed to install grub2 on ${RECOVER_DISK_PATH}"
