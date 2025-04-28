@@ -7,12 +7,13 @@ mod helper;
 mod mount;
 mod prepare_chroot;
 use anyhow::Result;
+use env_logger::Env;
 use log::{debug, error, info, log_enabled, Level};
 use std::{env, process};
 
 fn main() -> Result<()> {
     //Initialize the logger
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     // First verify we have the right amount of information to operate
     let mut cli_info = cli::cli()?;
