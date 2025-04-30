@@ -1,6 +1,6 @@
 [package]
 name = "alar"
-version = "1.0.6"
+version = "1.0.7"
 authors = ["malachma <malachma@microsoft.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
