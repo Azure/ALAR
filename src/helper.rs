@@ -210,8 +210,8 @@ fn write_builtin_action_scripts() -> Result<()> {
         .context("Directory ACTION_IMPL_DIR can not be created")?;
     
 
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "audit-impl.sh"), constants::AUDIT_IMPL_FILE)
-        .context("Writing audit-impl.sh failed")?;
+    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "auditd-impl.sh"), constants::AUDITD_IMPL_FILE)
+        .context("Writing audidt-impl.sh failed")?;
     fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "efifix-impl.sh"), constants::EFIFIX_IMPL_FILE)
         .context("Writing efifix-impl.sh failed")?;
     fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"), constants::FSTAB_IMPL_FILE)

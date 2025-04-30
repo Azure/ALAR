@@ -21,7 +21,7 @@ pub(crate) static CHROOT_CLI: &str = "chroot-cli";
 pub(crate) static TARBALL: &str = "https://github.com/Azure/ALAR/tarball/master";
 pub(crate) static RESCUE_ROOT: &str = "/srv/rescue-root/";
 // Our builtin action scripts
-pub(crate) static AUDIT_IMPL_FILE: &str =  include_str!("action_implementation/auditd-impl.sh");
+pub(crate) static AUDITD_IMPL_FILE: &str =  include_str!("action_implementation/auditd-impl.sh");
 pub(crate) static EFIFIX_IMPL_FILE: &str =  include_str!("action_implementation/efifix-impl.sh");
 pub(crate) static FSTAB_IMPL_FILE: &str =  include_str!("action_implementation/fstab-impl.sh");
 pub(crate) static GRUB_AKW_FILE: &str =  include_str!("action_implementation/grub.awk");
