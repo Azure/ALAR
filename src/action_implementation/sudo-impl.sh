@@ -1,16 +1,25 @@
 #!/usr/bin/bash
+# -----------------------------------------------------------------------------
+# Version: 1.0.0
+# Released: 2025-10-31
+# Author: Azure Support
 #
-# ALAR implementation for fixing common issues with the sudo configurations
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+# -----------------------------------------------------------------------------
+# Purpose: ALAR implementation for fixing common issues with the sudo 
+#          configurations
 #
 # This script is intended to fix the following conditions
 # - sudoers files do not have the required 440 permissions bits
 # - sudoers files are not owned by root:root
 # - duplicate username definitions exist in the waagent file
-# -- common byproduct of running vmaccess (reset password blade)
+# -- common byproduct of running vmaccess (reset password blade/az cli)
 # -- only the sudoers.d/waagent file is moved, all other issues are
 #    reported only
 # - sudoers contains the 'targetpw' flag, which is common in (older?) SUSE
 #   images
+# -----------------------------------------------------------------------------
 #
 # Load helper library
 IMPL_DIR=`dirname $0`

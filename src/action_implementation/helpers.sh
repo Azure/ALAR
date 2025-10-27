@@ -1,10 +1,17 @@
 #!/usr/bin/bash
+# -----------------------------------------------------------------------------
+# Version: 1.1.0
+# Released: 2025-10-31
+# Author: Azure Support
 #
-# ALAR helper script library
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+# -----------------------------------------------------------------------------
+# Purpose: ALAR helper script library
 #
-# these functions are not intended to do anything by themselves, the file is a
+# these functions are not intended to function independently, the file is a
 # library to be included in other ALAR implementations
-
+# -----------------------------------------------------------------------------
 # define this once for the script run - so that all backups have the same exact
 # timestamp
 TIMESTAMP=`date +%Y%m%dT%H%M%S`
