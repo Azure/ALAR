@@ -31,7 +31,6 @@ This action does strip off any lines in the `/etc/fstab` file which are not need
 -	If '/boot' or '/boot/efi' is missed it/they get added to the fstab configuration
 -	The resource disk configuration isn’t removed
 
-
 #### kernel
 This action does change the default kernel.
 It modifies the configuration so that the previous kernel version gets booted. After the boot the admin is able to replace the broken kernel.
@@ -54,6 +53,9 @@ This action is reinstalling the required software to boot from a `GEN2 VM`. The 
 #### auditd
 This action will alter the auditd configuration, replacing any HALT directives in the `/etc/audit/auditd.conf` file. Also in LVM environments, if the volume containing the audit logs is full, and free space is available in the volume group, the logical volume will be extended by 10% of the current size.
 
+#### sudo
+The `sudo` action will reset the permissions on the `/etc/sudoers` file and all files in `/etc/sudoers.d` to the required 0440 modes as well as check other best practices.  A basic check is run to detect and report on duplicate user entries and move *only* the `/etc/sudoers.d/waagent` file if it is found to conflict with other files.  
+
 ### How to use ALAR
 ALAR can be used either from the CLI of an existing Azure VM or with the help of the 
 vm-repair extension for the Azure CLI tool.
@@ -65,14 +67,14 @@ If a specific disk and the ADE disk-encryption key is required: `alar <action-na
 #### From the Azure CLI
 Utilizing ALAR with the help of the Azure CLI is quite simple.
 Create at fist a recover VM. We assume your VM named suse15 in the resource-group
-    `az vm repair create --verbose -g suse15_group -n suse15 --repair-username rescue --repair-password 'password!234'`
+  `az vm repair create --verbose -g suse15_group -n suse15 --repair-username rescue --repair-password 'password!234'`
 
 In the next step the `run` command option is used to execute ALAR on the repair VM created before.
 
-    `az vm repair run --verbose -g suse15_group -n suse15 --run-id linux-alar2 --parameters initrd --run-on-repair`
+  `az vm repair run --verbose -g suse15_group -n suse15 --run-id linux-alar2 --parameters initrd --run-on-repair`
 
 As a final step the `restore` command is used 
-    `az vm repair restore --verbose -g suse15_group -n suse15`
+  `az vm repair restore --verbose -g suse15_group -n suse15`
 
 Detailed information about the `vm-repair extension` is documented at https://learn.microsoft.com/en-us/cli/azure/vm/repair?view=azure-cli-latest
 
