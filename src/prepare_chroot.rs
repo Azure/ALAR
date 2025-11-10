@@ -5,6 +5,7 @@ use crate::distro::LogicalVolumesType;
 use crate::distro::PartInfo;
 use crate::helper;
 use crate::mount;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
@@ -110,7 +111,7 @@ pub fn set_environment(
             format!(
                 "{}{}",
                 helper::get_recovery_disk_path(cli_info),
-                partitions.get("boot").unwrap().number.to_string()
+                partitions.get("boot").unwrap().number
             ),
         );
     }
@@ -277,6 +278,13 @@ fn mount_required_partitions<'a>(
                 ) {
                     Ok(()) => {}
                     Err(e) => {
+                        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                            "ALAR EXCEPTION",
+                             &format!("Unable to mount the logical volume : {}", lv.name),
+                             "prepare_chroot() -> mount() raised an error",
+                             cli,
+                             distro,
+                        )).ok();
                         panic!(
                             "Unable to mount the logical volume : {} Error is: {}",
                             lv.name, e
