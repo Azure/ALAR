@@ -2,6 +2,7 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
 use crate::helper;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
@@ -33,6 +34,13 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
     // We need to load the driver first
     process::Command::new("modprobe").arg("xfs").status().map_err(|open_error | {
         error!("Loading of the module xfs was not possible. This may result in mount issues! : {open_error}");
+        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Warning,
+            "ALAR WARNING",
+             "Loading of the xfs module was not possible.",
+             "mount() -> modprobe xfs raised an error",
+             &CliInfo::default(),
+             &distro::Distro::default(),
+        )).ok();
         open_error
     })?;
 
@@ -41,6 +49,13 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
         Err(open_error) => {
             error!("Failed to get supported file systems: Detail {open_error}");
             error!("This is a severe issue for ALAR. Aborting.");
+            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                 "Failed to get supported file systems.",
+                 "mount() -> sys_mount::SupportedFilesystems::new() raised an error",
+                 &CliInfo::default(),
+                 &distro::Distro::default(),
+            )).ok();
             process::exit(1);
         }
     };
@@ -54,6 +69,13 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
             error!("Failed to mount {source} on {destination}: {mount_error}");
             if !is_relaxed {
                 error!("This is a severe issue for ALAR. Aborting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     &format!("Failed to mount {source} on {destination}."),
+                     "mount() -> sys_mount::Mount::builder().mount() raised an error",
+                     &CliInfo::default(),
+                     &distro::Distro::default(),
+                )).ok();
                 process::exit(1);
             }
             mount_error
@@ -191,9 +213,23 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
         Some(_code @ 1) if partition_filesystem == "xfs" => {
             error!("A general error occured while trying to recover the device {partition_path}.");
             error!("Stopping ALAR");
+            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                 &format!("A general error occured while trying to recover the device {partition_path}."),
+                 "Inside fsck_partition() -> xfs_repair returned exit code 1",
+                 &CliInfo::default(),
+                 &distro::Distro::default(),
+            )).ok();
             process::exit(1);
         }
         None => {
+            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                 "fsck operation terminated by signal.",
+                 "Inside fsck_partition() -> process::Command::status() returned None",
+                 &CliInfo::default(),
+                 &distro::Distro::default(),
+            )).ok();
             panic!(
                 "fsck operation terminated by signal error. ALAR is not able to proceed further!"
             );
