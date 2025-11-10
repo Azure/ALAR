@@ -3,6 +3,7 @@ use crate::cli;
 use crate::cli::CliInfo;
 use crate::constants;
 use crate::helper;
+use crate::telemetry;
 use crate::mount;
 use anyhow::Result;
 use log::debug;
@@ -47,10 +48,10 @@ pub(crate) struct DistroNameVersion {
 pub(crate) struct Distro {
     pub(crate) partitions: Vec<PartInfo>,
     pub(crate) distro_name_version: DistroNameVersion,
-    cli_info: CliInfo,
+    pub(crate) cli_info: CliInfo,
     pub(crate) is_ade: bool,
     pub(crate) is_lvm: bool,
-    architecture: Architecture,
+    pub(crate) architecture: Architecture,
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -64,11 +65,20 @@ pub enum DistroType {
     Undefined,
 }
 
-#[derive(Debug, Default)]
-enum Architecture {
+#[derive(Debug, Default, Copy, Clone)]
+pub(crate) enum Architecture {
     #[default]
     X86_64,
     Aarch64,
+}
+
+impl Display for Architecture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Architecture::X86_64 => write!(f, "x86_64"),
+            Architecture::Aarch64 => write!(f, "aarch64"),
+        }
+    }   
 }
 
 impl Display for DistroType {
@@ -164,6 +174,13 @@ impl Distro {
                 pfs
             } else {
                 error!("Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "Not able to determine the partition filesystem.",
+                     "Distro::get_partition_details() -> get_partition_filesystem() returned error",
+                     cli_info,
+                     &Distro::default(),
+                )).ok();
                 process::exit(1);
             };
 
@@ -262,7 +279,7 @@ impl Distro {
 
             if partition.part_type == "8E00" && partition.fstype == "LVM2_member" {
                 debug!("Found LVM partition. Executing read_distro_name_version_from_lv");
-                return Self::read_distro_name_version_from_lv(partition, distro.is_ade);
+                return Self::read_distro_name_version_from_lv(partition, distro.is_ade, cli_info);
             }
 
             // Above we handle any kind of LVM partition including an encrypted one.
@@ -401,7 +418,7 @@ impl Distro {
                 if mount::rmdir(constants::ASSERT_PATH).is_ok() {
                     info!("Removed assert path");
                 } else {
-                    error!("Erro removing directory ASSER_PATH");
+                    error!("Error removing directory ASSER_PATH");
                 }
 
                 return Some(DistroNameVersion {
@@ -419,7 +436,7 @@ impl Distro {
         if mount::rmdir(constants::ASSERT_PATH).is_ok() {
             info!("Removed assert path");
         } else {
-            error!("Erro removing directory ASSER_PATH");
+            error!("Error removing directory ASSER_PATH");
         }
         // If we reach this point we haven't found the OS partition
         // which could point out to operate on a data disk.
@@ -436,6 +453,7 @@ impl Distro {
     fn read_distro_name_version_from_lv(
         partinfo: &mut PartInfo,
         is_ade: bool,
+        cli_info: &CliInfo
     ) -> Option<DistroNameVersion> {
         let volumes = &partinfo.logical_volumes;
         let mut _name = "".to_string();
@@ -449,6 +467,13 @@ impl Distro {
         if let LogicalVolumesType::Some(lv) = volumes {
             if lv.is_empty() {
                 error!("No rootlv found in LVM. This is a not supported LVM setup. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "No rootlv found in LVM.",
+                     "Distro::read_distro_name_version_from_lv() -> LogicalVolumesType::Some returned empty vector",
+                     cli_info,
+                     &Distro::default(),
+                )).ok();
                 process::exit(1);
             }
             // Find the rootlv and mount it
@@ -562,6 +587,13 @@ impl Distro {
         match ade::prepare_ade_environment(cli_info, partition_details).is_err() {
             true => {
                 error!("Error preparing ADE environment. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "Error preparing ADE environment.",
+                     "Distro::enable_ade() -> ade::prepare_ade_environment() returned error",
+                     cli_info,
+                     distro,
+                )).ok();
                 process::exit(1);
             }
             false => {
@@ -609,12 +641,16 @@ impl Distro {
         }
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
+        let mut lv_detail_string: String = String::with_capacity(64);
+        match helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH))
+        {
+            Ok(value) => {lv_detail_string = value;}
+            Err(e) => {
+                error!("Error getting LV details from ADE disk: {e}");
+                process::exit(1);
+            }
+        };
 
-        let lv_detail =
-            helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH));
-
-        let lv_detail_string =
-            lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
         debug!(
             " ade_prepare_lv :: lv_detail_string: {:?}",
             &lv_detail_string
@@ -642,12 +678,14 @@ impl Distro {
     }
 
     pub fn new(cli_info: &mut cli::CliInfo) -> Distro {
+
         let mut distro = Distro::default();
         let mut partition_details = Self::get_partition_details(cli_info);
         debug!(
             "Partition details of the disk to be recovered: {:?}",
             &partition_details
         );
+
 
         // at this point is is still not determined whether, if the fs_type is crypt, the disk needs to manually decrypted
         if Self::is_fs_crypt_detected(&partition_details) {
@@ -676,6 +714,13 @@ impl Distro {
                 error!("Please make sure the disk isn't a Data-disk.");
                 error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
                 error!("ALAR isn't able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "No OS partition found during distro detection.",
+                     "Distro::new() -> what_distro_name_version() returned None",
+                     cli_info,
+                     &distro,
+                )).ok();
                 process::exit(1);
             }
         };
