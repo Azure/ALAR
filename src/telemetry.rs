@@ -1,17 +1,12 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-
 use crate::cli;
 use crate::distro;
 use crate::global;
 use crate::helper;
-use anyhow::anyhow;
-use anyhow::Context;
 use chrono::Utc;
 use log::debug;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-use serde::Deserialize;
 use serde::Serialize;
 use std::env;
 use std::time::Duration;
@@ -96,8 +91,8 @@ pub struct OsNameArchitecture {
 
 impl OsNameArchitecture {
     fn new(architecture: distro::Architecture) -> Self {
-        let repair_os_name = helper::get_repair_os_name().unwrap_or("Unknown".to_string());
-        let repair_os_version = helper::get_repair_os_version().unwrap_or("Unknown".to_string());
+        let repair_os_name = helper::get_repair_os_name().unwrap_or("Unknown".to_owned());
+        let repair_os_version = helper::get_repair_os_version().unwrap_or("Unknown".to_owned());
         let arch = format!("{}", architecture);
 
         OsNameArchitecture {
@@ -117,32 +112,31 @@ pub(crate) fn create_exception_envelope(
     distro: &distro::Distro,
 ) -> ExceptionEnvelope {
     let repair_info = OsNameArchitecture::new(distro.architecture);
-    let rc_cli_info = Rc::new(cli_info);
 
     // Properties for baseData
     let properties: HashMap<String, String> = HashMap::from([
         (
-            "Initiator".to_string(),
-            match &rc_cli_info.initiator {
-                cli::Initiator::Cli => "CLI".to_string(),
-                cli::Initiator::RecoverVm => "RecoverVm".to_string(),
-                cli::Initiator::SelfHelp => "SelfHelp".to_string(),
+            "Initiator".to_owned(),
+            match cli_info.initiator {
+                cli::Initiator::Cli => "CLI".to_owned(),
+                cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
+                cli::Initiator::SelfHelp => "SelfHelp".to_owned(),
             },
         ),
         (
-            "Action".to_string(),
-            Rc::clone(&rc_cli_info).actions.clone(),
+            "Action".to_owned(),
+            cli_info.actions.clone(),
         ),
-        ("Architecture".to_string(), repair_info.arch),
+        ("Architecture".to_owned(), repair_info.arch),
         (
-            "RepairDistroNameVersion".to_string(),
+            "RepairDistroNameVersion".to_owned(),
             format!(
                 "{} : {}",
                 repair_info.repair_os_name, repair_info.repair_os_version
             ),
         ),
         (
-            "RecoverDistroNameVersion".to_string(),
+            "RecoverDistroNameVersion".to_owned(),
             format!(
                 "{} : {}",
                 distro.distro_name_version.name, distro.distro_name_version.version_id
@@ -151,17 +145,17 @@ pub(crate) fn create_exception_envelope(
     ]);
 
     ExceptionEnvelope {
-        name: "Microsoft.ApplicationInsights.Exception".to_string(),
+        name: "Microsoft.ApplicationInsights.Exception".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         iKey: global::get_ikey(),
         tags: HashMap::from([
-            ("ai.cloud.role".to_string(), "ALAR".to_string()),
+            ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
             (
-                "ai.internal.sdkVersion".to_string(),
-                clap::crate_version!().to_string(),
+                "ai.internal.sdkVersion".to_owned(),
+                clap::crate_version!().to_owned(),
             ),
             (
-                "Initiator".to_string(),
+                "Initiator".to_owned(),
                 match cli_info.initiator {
                     cli::Initiator::Cli => "CLI".to_owned(),
                     cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
@@ -169,18 +163,18 @@ pub(crate) fn create_exception_envelope(
                 },
             ),
             (
-                "Action".to_string(),
-                Rc::clone(&rc_cli_info).actions.clone(),
+                "Action".to_owned(),
+                cli_info.actions.clone(),
             ),
         ]),
         data: ExceptionBase {
-            baseType: "ExceptionData".to_string(),
+            baseType: "ExceptionData".to_owned(),
             baseData: ExceptionBaseData {
                 ver: 2,
                 exceptions: vec![Exceptions {
-                    typeName: type_name.to_string(),
-                    message: message.to_string(),
-                    stack: stack.to_string(),
+                    typeName: type_name.to_owned(),
+                    message: message.to_owned(),
+                    stack: stack.to_owned(),
                     hasFullStack: true,
                 }],
                 severityLevel: severity_level,
@@ -197,9 +191,8 @@ pub(crate) fn create_trace_envelope(
     distro: &distro::Distro,
 ) -> TraceEnvelope {
     let repair_info = OsNameArchitecture::new(distro.architecture);
-    let rc_cli_info = Rc::new(cli_info);
 
-    let initiator = match rc_cli_info.initiator {
+    let initiator = match cli_info.initiator {
         cli::Initiator::Cli => "CLI".to_owned(),
         cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
         cli::Initiator::SelfHelp => "SelfHelp".to_owned(),
@@ -207,21 +200,21 @@ pub(crate) fn create_trace_envelope(
 
     // Properties for baseData
     let properties = HashMap::from([
-        ("Initiator".to_string(), initiator),
+        ("Initiator".to_owned(), initiator),
         (
-            "Action".to_string(),
-            Rc::clone(&rc_cli_info).actions.clone(),
+            "Action".to_owned(),
+            String::from(&cli_info.actions),
         ),
-        ("Architecture".to_string(), repair_info.arch),
+        ("Architecture".to_owned(), repair_info.arch),
         (
-            "RepairDistroNameVersion".to_string(),
+            "RepairDistroNameVersion".to_owned(),
             format!(
                 "{} : {}",
                 repair_info.repair_os_name, repair_info.repair_os_version
             ),
         ),
         (
-            "RecoverDistroNameVersion".to_string(),
+            "RecoverDistroNameVersion".to_owned(),
             format!(
                 "{} : {}",
                 distro.distro_name_version.name, distro.distro_name_version.version_id
@@ -230,21 +223,21 @@ pub(crate) fn create_trace_envelope(
     ]);
 
     TraceEnvelope {
-        name: "Microsoft.ApplicationInsights.Message".to_string(),
+        name: "Microsoft.ApplicationInsights.Message".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         iKey: global::get_ikey(),
         tags: HashMap::from([
-            ("ai.cloud.role".to_string(), "ALAR".to_string()),
+            ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
             (
-                "ai.internal.sdkVersion".to_string(),
-                clap::crate_version!().to_string(),
+                "ai.internal.sdkVersion".to_owned(),
+                clap::crate_version!().to_owned(),
             ),
         ]),
         data: TraceBase {
-            baseType: "MessageData".to_string(),
+            baseType: "MessageData".to_owned(),
             baseData: TraceBaseData {
                 ver: 2,
-                message: message.to_string(),
+                message: message.to_owned(),
                 severityLevel: severity_level,
                 properties,
             },
@@ -291,9 +284,9 @@ mod tests {
     fn test_create_trace_envelope() -> anyhow::Result<()> {
         let severity_level = SeverityLevel::Information;
         let message = "Test message";
-        let mut cli_info = cli::CliInfo::default();
+        let mut cli_info = Rc::new(cli::CliInfo::default());
 
-        cli_info.actions = "test".to_string();
+        cli_info.actions = "test".to_owned();
         cli_info.initiator = cli::Initiator::Cli;
         let distro = distro::Distro {
             architecture: distro::Architecture::X86_64,
@@ -313,7 +306,7 @@ mod tests {
         let stack = "Test stack trace";
         let mut cli_info = cli::CliInfo::default();
 
-        cli_info.actions = "test".to_string();
+        cli_info.actions = "test".to_owned();
         cli_info.initiator = cli::Initiator::Cli;
         let distro = distro::Distro {
             architecture: distro::Architecture::X86_64,
