@@ -26,8 +26,10 @@ else
         # Start the recovery
         if [[ ${args[1]} == "SELFHELP" ]]; then
                 unset 'args[1]'
+                echo "Debug : ${args[@]}"
                 RUST_LOG=info ./alar "${args[@]}" --selfhelp-initiator
         else
+                echo "Debug : ${args[@]}"
                 RUST_LOG=info ./alar "${args[@]}"
                 exit $?
         fi
