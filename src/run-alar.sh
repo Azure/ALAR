@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Save the arguments
+args=("$@")
+
 cd /tmp
 # Get version of ALAR and fetch it
 VERSION=$(curl -s -L https://raw.githubusercontent.com/Azure/ALAR/main/Cargo.toml | grep  -i VERSION | cut -f3 -d' ' | cut -c2-6)
