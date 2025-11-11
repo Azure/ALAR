@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# Handle the SELFHELP argument quirk from 'az vm repair run'
-args=("$@")
-echo "Before removal: ${args[@]}"
-unset 'args[1]'
-echo "After removal: ${args[@]}"
-
 cd /tmp
 # Get version of ALAR and fetch it
 VERSION=$(curl -s -L https://raw.githubusercontent.com/Azure/ALAR/main/Cargo.toml | grep  -i VERSION | cut -f3 -d' ' | cut -c2-6)
@@ -18,13 +12,23 @@ if [[ ${ARCH} == "aarch64" ]]; then
         chmod 700 alar
 
         # Start the recovery
-        RUST_LOG=info ./alar "${args[@]}"
-        exit $?
+        if [[ ${args[1]} == "SELFHELP" ]]; then
+                unset 'args[1]'
+                RUST_LOG=info ./alar "${args[@]}" --selfhelp-initiator
+        else
+                RUST_LOG=info ./alar "${args[@]}"
+                exit $?
+        fi
 else
         curl -s -o alar -L https://github.com/Azure/ALAR/releases/download/v$VERSION/alar
         chmod 700 alar
 
         # Start the recovery
-        RUST_LOG=info ./alar "${args[@]}"
-        exit $?
+        if [[ ${args[1]} == "SELFHELP" ]]; then
+                unset 'args[1]'
+                RUST_LOG=info ./alar "${args[@]}" --selfhelp-initiator
+        else
+                RUST_LOG=info ./alar "${args[@]}"
+                exit $?
+        fi
 fi
