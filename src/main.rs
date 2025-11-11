@@ -58,6 +58,14 @@ fn main() -> Result<()> {
         if !action::is_action_available(action)? {
             error!("The action {action} is not available. Exiting.");
             helper::cleanup(&distro, &cli_info)?;
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Warning,
+                "ActionNotFound",
+                &format!("The action {action} is not available"),
+                "",
+                &cli_info,
+                &distro,
+            ))?;
             process::exit(1);
         }
     }
