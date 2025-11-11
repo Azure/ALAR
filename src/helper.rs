@@ -314,3 +314,10 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
         "Unable to determine the OS version from /etc/os-release"
     ))
 }
+
+pub(crate) fn is_nvme_controller() -> Result<bool> {
+    match Path::new("/sys/class/nvme").try_exists()? {
+        true => Ok(true),
+        false => Ok(false),
+    }
+}
