@@ -1,12 +1,9 @@
 #!/bin/bash
 
 # Handle the SELFHELP argument quirk from 'az vm repair run'
-# echo "All original args: $@"
 args=("$@")
 unset 'args[1]'
-# As SELFHELP gets added as the second argument, we remove it
 # echo "After removal: ${args[@]}"
-
 
 cd /tmp
 # Get version of ALAR and fetch it
