@@ -26,8 +26,8 @@ recover_redhat() {
     yum reinstall -y grub2-efi-x64 shim-x64
     yum reinstall grub2-common -y
     
-    grub2-mkconfig -o /boot/grub2/grub.cfg
-    grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
     new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab

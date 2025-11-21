@@ -27,7 +27,7 @@ recover_redhat() {
         exit 1
     fi
     # We fixed the clasic boot loader, no need to fix the EFI boot loader part.
-    grub2-mkconfig -o /boot/grub2/grub.cfg
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
 }
