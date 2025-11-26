@@ -3,7 +3,7 @@ use crate::{
     cli::{self, CliInfo},
     constants,
     distro::{Distro, LogicalVolumesType},
-    mount, telemetry,
+    mount, nvme, telemetry,
 };
 use anyhow::{anyhow, Context, Result};
 use log::{debug, error, info};
@@ -51,7 +51,6 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             Ok(_) => {}
             Err(e) => debug!("Failed to send telemetry data: {}", e),
         }
-        process::exit(1);
     };
 
     if !cli_info.custom_recover_disk.is_empty() {
@@ -59,14 +58,38 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             Ok(path) => {
                 path_info = path;
             }
-            Err(e) => error_condition(e),
+            Err(e) => {
+                error_condition(e);
+                process::exit(1);
+            }
         }
     } else {
-        match realpath(constants::RESCUE_DISK) {
-            Ok(path) => {
-                path_info = path;
+        match is_nvme_controller() {
+            Ok(is_nvme) => {
+                if is_nvme {
+                    path_info = match nvme::get_recovery_nvme_disk_path() {
+                        Ok(path) => path,
+                        Err(e) => {
+                            error_condition(e);
+                            process::exit(1);
+                        }
+                    };
+                } else {
+                    match realpath(constants::RESCUE_DISK) {
+                        Ok(path) => {
+                            path_info = path;
+                        }
+                        Err(e) => {
+                            error_condition(e);
+                            process::exit(1)
+                        }
+                    }
+                }
             }
-            Err(e) => error_condition(e),
+            Err(e) => {
+                error_condition(e);
+                process::exit(1);
+            }
         }
     };
     path_info
@@ -316,7 +339,7 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller() -> Result<bool> {
-    match Path::new("/sys/class/nvme").try_exists()? {
+    match Path::new("/sys/class/nvme/nvme*").try_exists()? {
         true => Ok(true),
         false => Ok(false),
     }

@@ -8,9 +8,11 @@ use crate::mount;
 use crate::telemetry;
 use anyhow::Result;
 use log::debug;
+use log::error;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::process;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
     let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
@@ -212,11 +214,21 @@ fn mount_required_partitions<'a>(
         if distro.is_ade {
             constants::ADE_OSENCRYPT_PATH.to_string()
         } else {
-            format!(
-                "{}{}",
-                helper::get_recovery_disk_path(cli),
-                partitions.get("os").unwrap().number
-            )
+            match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                        debug!("Detected NVMe controller for recovery disk.");
+                        return format!( "{}p{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number);
+                    }
+               Ok(_is_nvme @ false) => {
+                        debug!("Detected SCSI controller for recovery disk.");
+                        return format!( "{}{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number);
+                    }
+                
+                Err(e) => {
+                    error!("Error detecting NVMe controller: {e}");
+                    process::exit(1);
+                }
+            };
         }
     };
 
@@ -316,6 +328,13 @@ fn mount_required_partitions<'a>(
 
     // Even if we have an ADE encrpted disk the boot partition and the efi partition are not encrypted
     let rescue_disk_path = helper::get_recovery_disk_path(cli);
+
+    //If we have a NVME controller, we need to add 'p' before the partition number
+    let rescue_disk_path = if helper::is_nvme_controller().unwrap_or(false) {
+        format!("{}p", rescue_disk_path)
+    } else {
+        rescue_disk_path
+    };
 
     // The order is again important. First /boot then /boot/efi
     // Verify also if we have a boot partition, Ubuntu doesn't have one for example

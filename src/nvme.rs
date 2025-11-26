@@ -12,16 +12,21 @@ pub(crate) struct NvmeController {
 }
 
 fn read_nvme_controllers() -> Result<Vec<NvmeController>> {
-    let parent_dir = Path::new("/sys/class/nvme");
+    //let parent_dir = Path::new("/sys/class/nvme/nvme*");
+    let class_nvme = Path::new("/sys/class/nvme/nvme*").try_exists();
     let mut controllers = Vec::new();
     
     // Check if the parent directory exists
-    if !parent_dir.exists() {
-        return Ok(controllers);
+    match class_nvme {
+        Ok(_) => { } ,
+        Err(e) => {
+            println!("Failed to check existence of /sys/class/nvme: {}", e);
+            return Ok(controllers);
+        }
     }
     
     // Iterate through entries in the parent directory (controllers like nvme0, nvme1)
-    for entry in fs::read_dir(parent_dir)? {
+    for entry in fs::read_dir("/sys/class/nvme")? {
         let entry = entry?;
         let path = entry.path();
         

@@ -3,8 +3,8 @@ use crate::cli;
 use crate::cli::CliInfo;
 use crate::constants;
 use crate::helper;
-use crate::telemetry;
 use crate::mount;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
@@ -78,7 +78,7 @@ impl Display for Architecture {
             Architecture::X86_64 => write!(f, "x86_64"),
             Architecture::Aarch64 => write!(f, "aarch64"),
         }
-    }   
+    }
 }
 
 impl Display for DistroType {
@@ -116,7 +116,7 @@ impl Display for DistroSubType {
     }
 }
 
-#[derive(Debug, PartialEq,)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DistroKind {
     pub(crate) distro_type: DistroType,
     pub(crate) distro_subtype: DistroSubType,
@@ -167,20 +167,28 @@ impl Distro {
             let v: Vec<&str> = line.trim().split(' ').collect();
             let _number = v[0].to_string().parse::<i32>().unwrap();
             let _part_type = v[5].to_string();
-            let partition_path = format!("{}{}", helper::get_recovery_disk_path(cli_info), _number);
+
+            let partition_path = if helper::is_nvme_controller().unwrap_or(false) {
+                format!("{}p{}", helper::get_recovery_disk_path(cli_info), _number)
+            } else {
+                format!("{}{}", helper::get_recovery_disk_path(cli_info), _number)
+            };
+
             let mut partition_fstype = if let Ok(pfs) =
                 Self::get_partition_filesystem(&partition_path)
             {
                 pfs
             } else {
                 error!("Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                     "Not able to determine the partition filesystem.",
-                     "Distro::get_partition_details() -> get_partition_filesystem() returned error",
-                     cli_info,
-                     &Distro::default(),
-                )).ok();
+                    "Not able to determine the partition filesystem.",
+                    "Distro::get_partition_details() -> get_partition_filesystem() returned error",
+                    cli_info,
+                    &Distro::default(),
+                ))
+                .ok();
                 process::exit(1);
             };
 
@@ -202,17 +210,21 @@ impl Distro {
         parts
     }
 
-    fn build_logical_volume_details(part: &mut [PartInfo], cli_info: &CliInfo, distro: &mut Distro) {
+    fn build_logical_volume_details(
+        part: &mut [PartInfo],
+        cli_info: &CliInfo,
+        distro: &mut Distro,
+    ) {
         let mut lv: Vec<LogicalVolume> = Vec::new();
 
         part.iter_mut()
             .filter(|lvm| lvm.part_type == "8E00")
             .for_each(|part| {
-                let lvm_partition = format!(
-                    "{}{}",
-                    helper::get_recovery_disk_path(cli_info),
-                    part.number
-                );
+                let lvm_partition = if helper::is_nvme_controller().unwrap_or(false) {
+                    format!("{}p{}", helper::get_recovery_disk_path(cli_info), part.number)
+                } else {
+                    format!("{}{}", helper::get_recovery_disk_path(cli_info), part.number)
+                };
 
                 match mount::importvg(cli_info, part.number) {
                     Ok(_) => {}
@@ -225,11 +237,13 @@ impl Distro {
                 if log::log_enabled!(log::Level::Debug) {
                     let lvscan = helper::run_fun("lvscan").unwrap();
                     debug!("lvscan after running importvg ");
-                    lvscan.lines().for_each(|line| debug!("{:#?}", line));
+                    let _ = &lvscan.lines().for_each(|line| debug!("{:#?}", line));
                 }
 
-                let lv_detail =
-                    helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", lvm_partition));
+                let lv_detail = helper::run_fun(&format!(
+                    "lsblk -ln {} -o NAME,FSTYPE | sed '1d'",
+                    lvm_partition
+                ));
 
                 let lv_detail_string =
                     lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
@@ -238,7 +252,11 @@ impl Distro {
                     &lv_detail_string
                 );
 
+                let recovery_disk_name = helper::get_recovery_disk_path(cli_info).split_off(5);
                 for line in lv_detail_string.lines() {
+                    if line.contains(&recovery_disk_name) {
+                        continue;
+                    }
                     let mut v: Vec<&str> = line.trim().split(' ').collect();
                     v.retain(|&x| !x.is_empty());
 
@@ -264,6 +282,7 @@ impl Distro {
         let recovery_disk_path = helper::get_recovery_disk_path(cli_info);
 
         debug!("recovery_disk_path: {}", recovery_disk_path);
+        debug!("what_distro: Partitions to be processed: {:#?}", partitions);
 
         if mount::mkdir_assert().is_err() {
             error!("Error creating assert dir. ALAR is not able to proceed. Exiting.");
@@ -303,7 +322,22 @@ impl Distro {
                 }
             }
 
-            let mount_path = format!("{}{}", &recovery_disk_path, partition.number);
+            let mount_path = match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                    debug!("Detected NVMe controller for recovery disk.");
+                    format!("{}p{}", &recovery_disk_path, partition.number)
+                }
+                Ok(_is_nvme @ false) => {
+                    debug!("Detected SCSI controller for recovery disk.");
+                    format!("{}{}", &recovery_disk_path, partition.number)
+                }
+
+                Err(e) => {
+                    error!("Error detecting NVMe controller: {e}");
+                    process::exit(1);
+                }
+            };
+
             debug!(
                 "Mounting partition number {} to {}",
                 partition.number, &mount_path
@@ -332,8 +366,8 @@ impl Distro {
                 // If the partition is marked as 'crypt?' the partition path needs to be corrected
                 "crypt?" => {
                     let partition_path = constants::ADE_OSENCRYPT_PATH;
-                    let fstype = Self::get_partition_filesystem(partition_path)
-                        .unwrap_or("xfs".to_string());
+                    let fstype =
+                        Self::get_partition_filesystem(partition_path).unwrap_or("xfs".to_string());
                     debug!("Filesystem type for the encrypted partition is: {}", fstype);
 
                     match mount::fsck_partition(partition_path) {
@@ -445,15 +479,19 @@ impl Distro {
 
     fn ade_set_no_lvm_partiton_fs(partitions: &mut [PartInfo]) {
         // This will only affect the partitions which are marked as 'crypt?' as this is an indicator for an encrypted partition.
-        partitions.iter_mut().filter(|partition| partition.fstype == "crypt?").for_each(|part| {
-            part.fstype = Self::get_partition_filesystem(constants::ADE_OSENCRYPT_PATH).unwrap_or("xfs".to_string());
-        });
+        partitions
+            .iter_mut()
+            .filter(|partition| partition.fstype == "crypt?")
+            .for_each(|part| {
+                part.fstype = Self::get_partition_filesystem(constants::ADE_OSENCRYPT_PATH)
+                    .unwrap_or("xfs".to_string());
+            });
     }
 
     fn read_distro_name_version_from_lv(
         partinfo: &mut PartInfo,
         is_ade: bool,
-        cli_info: &CliInfo
+        cli_info: &CliInfo,
     ) -> Option<DistroNameVersion> {
         let volumes = &partinfo.logical_volumes;
         let mut _name = "".to_string();
@@ -510,7 +548,7 @@ impl Distro {
                 .for_each(|volume| {
                     let mount_option = if volume.fstype == "xfs" { "nouuid" } else { "" };
 
-                    let partition_path = if is_ade  {
+                    let partition_path = if is_ade {
                         constants::RESCUE_ADE_USRLV
                     } else {
                         constants::ROOTVG_USRLV
@@ -579,21 +617,19 @@ impl Distro {
         partitions.iter().any(|part| part.fstype == "crypt?")
     }
 
-    fn enable_ade(
-        cli_info: &mut CliInfo,
-        partition_details: &mut [PartInfo],
-        distro: &mut Distro,
-    ) {
+    fn enable_ade(cli_info: &mut CliInfo, partition_details: &mut [PartInfo], distro: &mut Distro) {
         match ade::prepare_ade_environment(cli_info, partition_details).is_err() {
             true => {
                 error!("Error preparing ADE environment. ALAR is not able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                     "Error preparing ADE environment.",
-                     "Distro::enable_ade() -> ade::prepare_ade_environment() returned error",
-                     cli_info,
-                     distro,
-                )).ok();
+                    "Error preparing ADE environment.",
+                    "Distro::enable_ade() -> ade::prepare_ade_environment() returned error",
+                    cli_info,
+                    distro,
+                ))
+                .ok();
                 process::exit(1);
             }
             false => {
@@ -642,9 +678,13 @@ impl Distro {
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
         let mut lv_detail_string: String = String::with_capacity(64);
-        match helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH))
-        {
-            Ok(value) => {lv_detail_string = value;}
+        match helper::run_fun(&format!(
+            "lsblk -ln {} -o NAME,FSTYPE | sed '1d'",
+            constants::ADE_OSENCRYPT_PATH
+        )) {
+            Ok(value) => {
+                lv_detail_string = value;
+            }
             Err(e) => {
                 error!("Error getting LV details from ADE disk: {e}");
                 process::exit(1);
@@ -678,7 +718,6 @@ impl Distro {
     }
 
     pub fn new(cli_info: &mut cli::CliInfo) -> Distro {
-
         let mut distro = Distro::default();
         let mut partition_details = Self::get_partition_details(cli_info);
         debug!(
@@ -686,14 +725,13 @@ impl Distro {
             &partition_details
         );
 
-
         // at this point is is still not determined whether, if the fs_type is crypt, the disk needs to manually decrypted
         if Self::is_fs_crypt_detected(&partition_details) {
             /*
                The ADE disk gets decrypted and if we find an LVM signature we need to import the VG.
                Also, the LV on it get determined.
             */
-            Self::enable_ade(cli_info, &mut partition_details,  &mut distro);
+            Self::enable_ade(cli_info, &mut partition_details, &mut distro);
             Self::ade_prepare_lv(&mut partition_details, &mut distro);
         } else {
             /*
@@ -714,13 +752,15 @@ impl Distro {
                 error!("Please make sure the disk isn't a Data-disk.");
                 error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
                 error!("ALAR isn't able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                     "No OS partition found during distro detection.",
-                     "Distro::new() -> what_distro_name_version() returned None",
-                     cli_info,
-                     &distro,
-                )).ok();
+                    "No OS partition found during distro detection.",
+                    "Distro::new() -> what_distro_name_version() returned None",
+                    cli_info,
+                    &distro,
+                ))
+                .ok();
                 process::exit(1);
             }
         };

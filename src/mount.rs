@@ -2,12 +2,14 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
 use crate::helper;
+use crate::nvme;
 use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
 use log::log_enabled;
+use std::cell::RefMut;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -49,13 +51,15 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
         Err(open_error) => {
             error!("Failed to get supported file systems: Detail {open_error}");
             error!("This is a severe issue for ALAR. Aborting.");
-            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
-                 "Failed to get supported file systems.",
-                 "mount() -> sys_mount::SupportedFilesystems::new() raised an error",
-                 &CliInfo::default(),
-                 &distro::Distro::default(),
-            )).ok();
+                "Failed to get supported file systems.",
+                "mount() -> sys_mount::SupportedFilesystems::new() raised an error",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             process::exit(1);
         }
     };
@@ -69,13 +73,15 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
             error!("Failed to mount {source} on {destination}: {mount_error}");
             if !is_relaxed {
                 error!("This is a severe issue for ALAR. Aborting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                     &format!("Failed to mount {source} on {destination}."),
-                     "mount() -> sys_mount::Mount::builder().mount() raised an error",
-                     &CliInfo::default(),
-                     &distro::Distro::default(),
-                )).ok();
+                    &format!("Failed to mount {source} on {destination}."),
+                    "mount() -> sys_mount::Mount::builder().mount() raised an error",
+                    &CliInfo::default(),
+                    &distro::Distro::default(),
+                ))
+                .ok();
                 process::exit(1);
             }
             mount_error
@@ -153,7 +159,10 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
                 .status()
             {
                 exit_code = stat.code();
-                 debug!("Inside second fsck for XFS : xfs_repair returned with exit code: {:?}", exit_code);
+                debug!(
+                    "Inside second fsck for XFS : xfs_repair returned with exit code: {:?}",
+                    exit_code
+                );
             }
 
             /*
@@ -213,23 +222,29 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
         Some(_code @ 1) if partition_filesystem == "xfs" => {
             error!("A general error occured while trying to recover the device {partition_path}.");
             error!("Stopping ALAR");
-            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
-                 &format!("A general error occured while trying to recover the device {partition_path}."),
-                 "Inside fsck_partition() -> xfs_repair returned exit code 1",
-                 &CliInfo::default(),
-                 &distro::Distro::default(),
-            )).ok();
+                &format!(
+                    "A general error occured while trying to recover the device {partition_path}."
+                ),
+                "Inside fsck_partition() -> xfs_repair returned exit code 1",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             process::exit(1);
         }
         None => {
-            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
-                 "fsck operation terminated by signal.",
-                 "Inside fsck_partition() -> process::Command::status() returned None",
-                 &CliInfo::default(),
-                 &distro::Distro::default(),
-            )).ok();
+                "fsck operation terminated by signal.",
+                "Inside fsck_partition() -> process::Command::status() returned None",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             panic!(
                 "fsck operation terminated by signal error. ALAR is not able to proceed further!"
             );
@@ -305,15 +320,33 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
             Ok(())
         } else {
             debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
-            let disk_path = format!(
-                "{}{}",
-                helper::get_recovery_disk_path(cli_info),
-                partition_number
-            );
 
-            helper::run_cmd(&format!(
-                "vgimportclone -n rescuevg {disk_path}; vgscan --mknodes"
-            ))?;
+            match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                    debug!("Detected NVMe controller for recovery disk.");
+                    helper::run_cmd(&format!(
+                        "vgimportclone -n rescuevg {}p{}; vgscan --mknodes",
+                        helper::get_recovery_disk_path(cli_info),
+                        partition_number
+                    ))?;
+                }
+                Ok(_is_nvme @ false) => {
+                    debug!("Detected SCSI controller for recovery disk.");
+                    helper::run_cmd(&format!(
+                        "vgimportclone -n rescuevg {}{}; vgscan --mknodes",
+                        helper::get_recovery_disk_path(cli_info),
+                        partition_number
+                    ))?;
+                }
+                Err(e) => {
+                    error!("Error while detecting the controller type: {e}");
+                    process::exit(1);
+                }
+            };
+
+            // helper::run_cmd(&format!(
+            //     "vgimportclone -n rescuevg {disk_path}; vgscan --mknodes"
+            // ))?;
 
             helper::run_cmd("vgrename rootvg oldvg; vgrename rescuevg rootvg; vgchange -ay")?;
 
@@ -366,11 +399,33 @@ pub(crate) fn rescan_host() -> Result<()> {
     )?;
 
     debug!("Rescanning the host");
-    match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
-        Ok(_) => {}
-        Err(e) => {
-            error!("Error writing to /sys/class/scsi_host/host1/scan: {e}");
-            error!("It might be necessary to rescan the scsi host manually");
+    // TODO: Apply the same for a NVMe controller
+    if helper::is_nvme_controller().unwrap_or(false) {
+        let mut controller = match nvme::get_recovery_nvme_disk_path(){
+            // Stripp of the /dev/ part
+            Ok(mut ctrl) => ctrl.split_off(5),
+            Err(e) => {
+                error!("Error getting the nvme controller path: {e}");
+                process::exit(1);
+            }
+        };
+
+        let _ = controller.split_off(5);
+
+        match fs::write(format!("/sys/class/nvme/{controller}/rescan_controller"), b"1") {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error writing to /sys/class/nvme/{controller}/rescan_controller: {e}");
+                error!("It might be necessary to rescan the nvme host manually");
+            }
+        }
+    } else {
+        match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error writing to /sys/class/scsi_host/host1/scan: {e}");
+                error!("It might be necessary to rescan the scsi host manually");
+            }
         }
     }
 

@@ -8,6 +8,7 @@ mod helper;
 mod mount;
 mod prepare_chroot;
 mod telemetry;
+mod nvme;
 use anyhow::Result;
 use env_logger::Env;
 use log::{debug, error, info, log_enabled, Level};
@@ -99,9 +100,7 @@ fn main() -> Result<()> {
         }
     } else {
         for action_name in cli_info.actions.split(',') {
-            if action_name.trim() == "test" {
-                continue;
-            }
+            debug!("Running action script: {}", action_name.trim());
             action::run_repair_script(action_name.trim())?;
         }
     }
