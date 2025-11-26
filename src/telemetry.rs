@@ -284,7 +284,7 @@ mod tests {
     fn test_create_trace_envelope() -> anyhow::Result<()> {
         let severity_level = SeverityLevel::Information;
         let message = "Test message";
-        let mut cli_info = Rc::new(cli::CliInfo::default());
+        let mut cli_info = cli::CliInfo::default();
 
         cli_info.actions = "test".to_owned();
         cli_info.initiator = cli::Initiator::Cli;
