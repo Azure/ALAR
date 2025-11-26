@@ -32,3 +32,4 @@ pub(crate) static KERNEL_IMPL_FILE: &str =  include_str!("action_implementation/
 pub(crate) static SAFE_EXIT_FILE: &str =  include_str!("action_implementation/safe-exit.sh");
 pub(crate) static SERIALCONSOLE_IMPL_FILE: &str =  include_str!("action_implementation/serialconsole-impl.sh");
 pub(crate) static TEST_IMPL_FILE: &str =  include_str!("action_implementation/test-impl.sh");
+pub(crate) static SUDO_IMPL_FILE: &str =  include_str!("action_implementation/sudo-impl.sh");
