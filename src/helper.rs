@@ -56,6 +56,7 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
     if !cli_info.custom_recover_disk.is_empty() {
         match realpath(&cli_info.custom_recover_disk) {
             Ok(path) => {
+                debug!("Using custom recovery disk path: {}", cli_info.custom_recover_disk);
                 path_info = path;
             }
             Err(e) => {
@@ -362,5 +363,5 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller() -> Result<bool> {
-    Ok(Path::new("/sys/class/nvme/nvme*").try_exists()?)
+    Path::new("/sys/class/nvme").try_exists().context("Veryfing /sys/class/nvme throw an error")
 }
