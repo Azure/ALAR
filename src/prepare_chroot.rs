@@ -81,6 +81,16 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
     }
 }
 
+// A helper function to get the corrected recovery disk path
+// depending if we have an NVMe controller or not
+fn get_corrected_recover_path(cli_info: &cli::CliInfo) -> String {
+    if helper::is_nvme_controller().unwrap_or(false) {
+        format!("{}p", helper::get_recovery_disk_path(cli_info))
+    } else {
+        helper::get_recovery_disk_path(cli_info)
+    }
+}
+
 pub fn set_environment(
     distro: &distro::Distro,
     cli_info: &cli::CliInfo,
@@ -112,7 +122,7 @@ pub fn set_environment(
             "boot_part_path",
             format!(
                 "{}{}",
-                helper::get_recovery_disk_path(cli_info),
+                get_corrected_recover_path(cli_info),
                 partitions.get("boot").unwrap().number
             ),
         );
@@ -126,7 +136,7 @@ pub fn set_environment(
             "efi_part_path",
             format!(
                 "{}{}",
-                helper::get_recovery_disk_path(cli_info),
+                get_corrected_recover_path(cli_info),
                 partitions.get("efi").unwrap().number
             ),
         );
