@@ -127,7 +127,7 @@ pub fn set_environment(
             format!(
                 "{}{}",
                 helper::get_recovery_disk_path(cli_info),
-                partitions.get("efi").unwrap().number.to_string()
+                partitions.get("efi").unwrap().number
             ),
         );
     }
@@ -217,18 +217,18 @@ fn mount_required_partitions<'a>(
             match helper::is_nvme_controller() {
                 Ok(_is_nvme @ true) => {
                         debug!("Detected NVMe controller for recovery disk.");
-                        return format!( "{}p{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number);
+                        format!( "{}p{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
                     }
                Ok(_is_nvme @ false) => {
                         debug!("Detected SCSI controller for recovery disk.");
-                        return format!( "{}{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number);
+                        format!( "{}{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
                     }
                 
                 Err(e) => {
                     error!("Error detecting NVMe controller: {e}");
                     process::exit(1);
                 }
-            };
+            }
         }
     };
 

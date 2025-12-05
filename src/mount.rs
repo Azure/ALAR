@@ -2,14 +2,12 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
 use crate::helper;
-use crate::nvme;
 use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
 use log::log_enabled;
-use std::cell::RefMut;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -344,10 +342,6 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
                 }
             };
 
-            // helper::run_cmd(&format!(
-            //     "vgimportclone -n rescuevg {disk_path}; vgscan --mknodes"
-            // ))?;
-
             helper::run_cmd("vgrename rootvg oldvg; vgrename rescuevg rootvg; vgchange -ay")?;
 
             if items.contains_key("/boot/efi") {
@@ -385,13 +379,21 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
 }
 
 pub(crate) fn rename_oldvg() {
+    // Only used for scsi disk. NVMe is currently not supported
+    // It is run at the end of the recovery process to rename oldvg to rootvg
+    // If it fails it is considered non fatal as the recovery process has finished anyway
     debug!("Inside rename_oldvg");
+
     if helper::run_cmd("vgrename oldvg rootvg").is_err() {
         error!("Failed to rename oldvg to rootvg");
     }
 }
 
 pub(crate) fn rescan_host() -> Result<()> {
+    // Only used for scsi disk. NVMe is currently not supported
+    // Rescan can't be run on a NVMe it is not possible to select a distinct disk
+    // It is verified at the start of the recover process whether the recover VM is basedon LVM or not
+    //  If it is LVM based a LVM recover is no supported on a VG with the name rootvg, like we have on RedHat
     debug!("Inside rescan_host");
 
     let old_mounts = helper::run_fun(
@@ -399,33 +401,11 @@ pub(crate) fn rescan_host() -> Result<()> {
     )?;
 
     debug!("Rescanning the host");
-    // TODO: Apply the same for a NVMe controller
-    if helper::is_nvme_controller().unwrap_or(false) {
-        let mut controller = match nvme::get_recovery_nvme_disk_path(){
-            // Stripp of the /dev/ part
-            Ok(mut ctrl) => ctrl.split_off(5),
-            Err(e) => {
-                error!("Error getting the nvme controller path: {e}");
-                process::exit(1);
-            }
-        };
-
-        let _ = controller.split_off(5);
-
-        match fs::write(format!("/sys/class/nvme/{controller}/rescan_controller"), b"1") {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error writing to /sys/class/nvme/{controller}/rescan_controller: {e}");
-                error!("It might be necessary to rescan the nvme host manually");
-            }
-        }
-    } else {
-        match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error writing to /sys/class/scsi_host/host1/scan: {e}");
-                error!("It might be necessary to rescan the scsi host manually");
-            }
+    match fs::write("/sys/class/scsi_host/host1/scan", b"- - -") {
+        Ok(_) => {}
+        Err(e) => {
+            error!("Error writing to /sys/class/scsi_host/host1/scan: {e}");
+            error!("It might be necessary to rescan the scsi host manually");
         }
     }
 
@@ -434,7 +414,7 @@ pub(crate) fn rescan_host() -> Result<()> {
             println!("udevadm trigger was successful")
         }
         Err(e) => {
-            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executed. Some error got thrown: {e}");
+            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executed. Error: {e}");
         }
     }
 
@@ -479,14 +459,21 @@ pub(crate) fn rescan_host() -> Result<()> {
     Ok(())
 }
 
+// This function does support only scsi backed devices
 pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
     debug!("Inside disable_broken_disk");
     let recover_disk = helper::get_recovery_disk_path(cli_info).replace("/dev/", "");
     helper::run_cmd("vgchange -an rootvg")?;
 
+    // If we have an NVMe controller we skip the next steps as they are not applicable
+    if helper::is_nvme_controller().unwrap_or(false) {
+        return Ok(());
+    }
+
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
     Ok(())
 }
+
 pub(crate) fn bind_mount(source: &str, destination: &str) -> Result<()> {
     let supported_fs = sys_mount::SupportedFilesystems::new()?;
 

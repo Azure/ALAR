@@ -129,15 +129,56 @@ impl PartInfo {
 }
 
 impl Distro {
-    fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
-        let custom_disk = helper::get_recovery_disk_path(cli_info);
-        let command = format!("sgdisk {custom_disk} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
+    fn get_all_partitions(disk_path: &str) -> String {
+        let command = format!("sgdisk {disk_path} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
         match helper::run_fun(&command) {
             Ok(partitions) => partitions,
             Err(e) => {
-                error!("Error getting recover disk info. Something went wrong : {e}. ALAR is not able to proceed. Exiting.");
+                error!("Error getting disk info for disk {}. Something went wrong : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
                 process::exit(1);
             }
+        }
+    }
+
+    fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
+        let recover_disk = helper::get_recovery_disk_path(cli_info);
+        Self::get_all_partitions(&recover_disk)
+    }
+
+    /// Check whether LVM is in use on the repair VM
+    fn is_lvm_on_repair_disk() -> bool {
+        match helper::run_fun("findmnt | grep mapper | grep usr") {
+            Ok(output) => !output.trim().is_empty(),
+            Err(_) => false,
+        }
+    }
+
+    // The logic in this function is intended to verify whther the repair VM is a RHEL 7.x or 8.x version
+    // Only they can be used. With newer versions the functionality is broken to repair a LVM on a LVM based repair VM
+    fn is_repairvm_with_lvm_allowed() -> bool {
+        if Self::is_lvm_on_repair_disk() {
+            match helper::get_repair_os_version() {
+                Ok(version) => {
+                    let local_os_version = version.trim();
+                    debug!("Repair VM OS version detected as: {}", local_os_version);
+                    if local_os_version.starts_with("7.") || local_os_version.starts_with("8.") {
+                        // allowed
+                        info!("LVM detected on the recovery VM disk. ALAR is able to handle LVM based recovery disks.");
+                        true
+                    } else {
+                        error!("LVM detected on the recovery VM disk. However, the repair VM OS version is {}. Only RHEL 7.x and 8.x are supported for LVM based recovery disks. Exiting.", local_os_version);
+                        false
+                    }
+                }
+                Err(e) => {
+                    error!("Error getting repair VM OS version: {}. Exiting.", e);
+                    // We are cautious here and don't allow LVM based recovery disks if we can't determine the OS version
+                    false
+                }
+            }
+        } else {
+            // no LVM in use on repair disk
+            true
         }
     }
 
@@ -221,9 +262,17 @@ impl Distro {
             .filter(|lvm| lvm.part_type == "8E00")
             .for_each(|part| {
                 let lvm_partition = if helper::is_nvme_controller().unwrap_or(false) {
-                    format!("{}p{}", helper::get_recovery_disk_path(cli_info), part.number)
+                    format!(
+                        "{}p{}",
+                        helper::get_recovery_disk_path(cli_info),
+                        part.number
+                    )
                 } else {
-                    format!("{}{}", helper::get_recovery_disk_path(cli_info), part.number)
+                    format!(
+                        "{}{}",
+                        helper::get_recovery_disk_path(cli_info),
+                        part.number
+                    )
                 };
 
                 match mount::importvg(cli_info, part.number) {
@@ -297,6 +346,19 @@ impl Distro {
             }
 
             if partition.part_type == "8E00" && partition.fstype == "LVM2_member" {
+                // Due to issues with RHEL above version 9.x we need to check whether the repair VM is allowed to use LVM based recovery disks
+                if !Self::is_repairvm_with_lvm_allowed() {
+                    telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                      "LVM based recovery disks are not supported on repair VMs with OS version >= 9.x.",
+                        "Distro::is_repairvm_allowed_to_use_lvm() -> get_repair_os_version() returned >= 9.x",
+                        cli_info,
+                        distro,
+                )).ok();
+                    process::exit(1);
+                }
+
                 debug!("Found LVM partition. Executing read_distro_name_version_from_lv");
                 return Self::read_distro_name_version_from_lv(partition, distro.is_ade, cli_info);
             }

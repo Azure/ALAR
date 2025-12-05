@@ -7,11 +7,6 @@ license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
-[profile.release]
-opt-level = "z"
-lto = "fat"
-
 [dependencies]
 sys-mount = "3.*"
 fs_extra = "1.3.0"
@@ -25,4 +20,13 @@ simple-base64 = "0.*"
 reqwest = { version = "0.*", features = [ "json", "charset", "http2", "system-proxy", "rustls-tls-webpki-roots", "blocking"], default-features = false }
 chrono = "0.4.42"
 regex = "1.12.2"
+
+[build]
+rustflags = ["-Z", "threads=8"]
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+panic = "abort"
+strip = "symbols"
 

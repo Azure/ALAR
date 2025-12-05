@@ -246,7 +246,14 @@ fn load_local_action_scripts(directory_source: &str) -> Result<()> {
         .context("Copying the content of the script directory to '/tmp' failed")?;
     Ok(())
 }
-
+// By default all the action scripts will be part of the generated binary.
+// During runtime those scripts will be written to the disk for further usage.
+// The intend is to make ALAR independent from network access to be able to
+// run in an isolated environment.
+// However, if network access is available the user can decide to download
+// the latest action scripts from the remote repository or to provide a local
+// directory utilizing self devlopped action scripts.
+// Use the 'help' option what options are available.
 fn write_builtin_action_scripts() -> Result<()> {
     fs::create_dir_all(constants::ACTION_IMPL_DIR)
         .context("Directory ACTION_IMPL_DIR can not be created")?;
@@ -256,56 +263,72 @@ fn write_builtin_action_scripts() -> Result<()> {
         constants::AUDITD_IMPL_FILE,
     )
     .context("Writing auditd-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "efifix-impl.sh"),
         constants::EFIFIX_IMPL_FILE,
     )
     .context("Writing efifix-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"),
         constants::FSTAB_IMPL_FILE,
     )
     .context("Writing fstab-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "grub.awk"),
         constants::GRUB_AKW_FILE,
     )
     .context("Writing grub.awk failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "grubfix-impl.sh"),
         constants::GRUBFIX_IMPL_FILE,
     )
     .context("Writing grubfix-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "helpers.sh"),
         constants::HELPERS_SH_FILE,
     )
     .context("Writing helpers.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "initrd-impl.sh"),
         constants::INITRD_IMPL_FILE,
     )
     .context("Writing initrd-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "kernel-impl.sh"),
         constants::KERNEL_IMPL_FILE,
     )
     .context("Writing kernel-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "safe-exit.sh"),
         constants::SAFE_EXIT_FILE,
     )
     .context("Writing safe-exit.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "serialconsole-impl.sh"),
         constants::SERIALCONSOLE_IMPL_FILE,
     )
     .context("Writing serialconsole-impl.sh failed")?;
+
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "test-impl.sh"),
         constants::TEST_IMPL_FILE,
     )
     .context("Writing test-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "sudo-impl.sh"),
+        constants::SUDO_IMPL_FILE,
+    )
+    .context("Writing sudo-impl.sh failed")?;
 
     Ok(())
 }
@@ -320,7 +343,7 @@ pub(crate) fn get_repair_os_name() -> Result<String> {
         }
     }
     Err(anyhow!(
-        "Unable to determine the OS name a from /etc/os-release"
+        "Unable to determine the OS name from /etc/os-release"
     ))
 }
 
@@ -339,8 +362,5 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller() -> Result<bool> {
-    match Path::new("/sys/class/nvme/nvme*").try_exists()? {
-        true => Ok(true),
-        false => Ok(false),
-    }
+    Ok(Path::new("/sys/class/nvme/nvme*").try_exists()?)
 }

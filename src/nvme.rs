@@ -12,7 +12,6 @@ pub(crate) struct NvmeController {
 }
 
 fn read_nvme_controllers() -> Result<Vec<NvmeController>> {
-    //let parent_dir = Path::new("/sys/class/nvme/nvme*");
     let class_nvme = Path::new("/sys/class/nvme/nvme*").try_exists();
     let mut controllers = Vec::new();
     

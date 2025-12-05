@@ -41,7 +41,7 @@ fn parse_connection_string(cs: &str) -> anyhow::Result<(String, String)> {
 
 fn teleendpoint_and_ikey() -> (String, String) {
     INIT.call_once(|| {
-
+            // Before buidling the project, set the APPLICATIONINSIGHTS_CONNECTION_STRING environment variable.
             match parse_connection_string(env!("APPLICATIONINSIGHTS_CONNECTION_STRING")) {
                 Ok((endpoint, ikey)) => {
                     MY_ENDPOINT.with(|e| {
@@ -51,7 +51,6 @@ fn teleendpoint_and_ikey() -> (String, String) {
                 }
                 Err(e) => {
                     error!("Failed to parse APPLICATIONINSIGHTS_CONNECTION_STRING environment variable: {}", e);
-                    // we do nothing and look for trouble ... process::exit(1);
                 }
             }
     });
