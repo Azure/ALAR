@@ -4,6 +4,7 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::helper;
 use crate::mount;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
@@ -47,10 +48,10 @@ pub(crate) struct DistroNameVersion {
 pub(crate) struct Distro {
     pub(crate) partitions: Vec<PartInfo>,
     pub(crate) distro_name_version: DistroNameVersion,
-    cli_info: CliInfo,
+    pub(crate) cli_info: CliInfo,
     pub(crate) is_ade: bool,
     pub(crate) is_lvm: bool,
-    architecture: Architecture,
+    pub(crate) architecture: Architecture,
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -64,11 +65,20 @@ pub enum DistroType {
     Undefined,
 }
 
-#[derive(Debug, Default)]
-enum Architecture {
+#[derive(Debug, Default, Copy, Clone)]
+pub(crate) enum Architecture {
     #[default]
     X86_64,
     Aarch64,
+}
+
+impl Display for Architecture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Architecture::X86_64 => write!(f, "x86_64"),
+            Architecture::Aarch64 => write!(f, "aarch64"),
+        }
+    }
 }
 
 impl Display for DistroType {
@@ -106,7 +116,7 @@ impl Display for DistroSubType {
     }
 }
 
-#[derive(Debug, PartialEq,)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DistroKind {
     pub(crate) distro_type: DistroType,
     pub(crate) distro_subtype: DistroSubType,
@@ -119,15 +129,56 @@ impl PartInfo {
 }
 
 impl Distro {
-    fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
-        let custom_disk = helper::get_recovery_disk_path(cli_info);
-        let command = format!("sgdisk {custom_disk} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
+    fn get_all_partitions(disk_path: &str) -> String {
+        let command = format!("sgdisk {disk_path} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
         match helper::run_fun(&command) {
             Ok(partitions) => partitions,
             Err(e) => {
-                error!("Error getting recover disk info. Something went wrong : {e}. ALAR is not able to proceed. Exiting.");
+                error!("Error getting disk info for disk {}. Something went wrong : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
                 process::exit(1);
             }
+        }
+    }
+
+    fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
+        let recover_disk = helper::get_recovery_disk_path(cli_info);
+        Self::get_all_partitions(&recover_disk)
+    }
+
+    /// Check whether LVM is in use on the repair VM
+    fn is_lvm_on_repair_disk() -> bool {
+        match helper::run_fun("findmnt | grep mapper | grep usr") {
+            Ok(output) => !output.trim().is_empty(),
+            Err(_) => false,
+        }
+    }
+
+    // The logic in this function is intended to verify whther the repair VM is a RHEL 7.x or 8.x version
+    // Only they can be used. With newer versions the functionality is broken to repair a LVM on a LVM based repair VM
+    fn is_repairvm_with_lvm_allowed() -> bool {
+        if Self::is_lvm_on_repair_disk() {
+            match helper::get_repair_os_version() {
+                Ok(version) => {
+                    let local_os_version = version.trim();
+                    debug!("Repair VM OS version detected as: {}", local_os_version);
+                    if local_os_version.starts_with("7.") || local_os_version.starts_with("8.") {
+                        // allowed
+                        info!("LVM detected on the recovery VM disk. ALAR is able to handle LVM based recovery disks.");
+                        true
+                    } else {
+                        error!("LVM detected on the recovery VM disk. However, the repair VM OS version is {}. Only RHEL 7.x and 8.x are supported for LVM based recovery disks. Exiting.", local_os_version);
+                        false
+                    }
+                }
+                Err(e) => {
+                    error!("Error getting repair VM OS version: {}. Exiting.", e);
+                    // We are cautious here and don't allow LVM based recovery disks if we can't determine the OS version
+                    false
+                }
+            }
+        } else {
+            // no LVM in use on repair disk
+            true
         }
     }
 
@@ -157,13 +208,28 @@ impl Distro {
             let v: Vec<&str> = line.trim().split(' ').collect();
             let _number = v[0].to_string().parse::<i32>().unwrap();
             let _part_type = v[5].to_string();
-            let partition_path = format!("{}{}", helper::get_recovery_disk_path(cli_info), _number);
+
+            let partition_path = if helper::is_nvme_controller().unwrap_or(false) {
+                format!("{}p{}", helper::get_recovery_disk_path(cli_info), _number)
+            } else {
+                format!("{}{}", helper::get_recovery_disk_path(cli_info), _number)
+            };
+
             let mut partition_fstype = if let Ok(pfs) =
                 Self::get_partition_filesystem(&partition_path)
             {
                 pfs
             } else {
                 error!("Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                    "Not able to determine the partition filesystem.",
+                    "Distro::get_partition_details() -> get_partition_filesystem() returned error",
+                    cli_info,
+                    &Distro::default(),
+                ))
+                .ok();
                 process::exit(1);
             };
 
@@ -185,17 +251,29 @@ impl Distro {
         parts
     }
 
-    fn build_logical_volume_details(part: &mut [PartInfo], cli_info: &CliInfo, distro: &mut Distro) {
+    fn build_logical_volume_details(
+        part: &mut [PartInfo],
+        cli_info: &CliInfo,
+        distro: &mut Distro,
+    ) {
         let mut lv: Vec<LogicalVolume> = Vec::new();
 
         part.iter_mut()
             .filter(|lvm| lvm.part_type == "8E00")
             .for_each(|part| {
-                let lvm_partition = format!(
-                    "{}{}",
-                    helper::get_recovery_disk_path(cli_info),
-                    part.number
-                );
+                let lvm_partition = if helper::is_nvme_controller().unwrap_or(false) {
+                    format!(
+                        "{}p{}",
+                        helper::get_recovery_disk_path(cli_info),
+                        part.number
+                    )
+                } else {
+                    format!(
+                        "{}{}",
+                        helper::get_recovery_disk_path(cli_info),
+                        part.number
+                    )
+                };
 
                 match mount::importvg(cli_info, part.number) {
                     Ok(_) => {}
@@ -208,11 +286,13 @@ impl Distro {
                 if log::log_enabled!(log::Level::Debug) {
                     let lvscan = helper::run_fun("lvscan").unwrap();
                     debug!("lvscan after running importvg ");
-                    lvscan.lines().for_each(|line| debug!("{:#?}", line));
+                    let _ = &lvscan.lines().for_each(|line| debug!("{:#?}", line));
                 }
 
-                let lv_detail =
-                    helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", lvm_partition));
+                let lv_detail = helper::run_fun(&format!(
+                    "lsblk -ln {} -o NAME,FSTYPE | sed '1d'",
+                    lvm_partition
+                ));
 
                 let lv_detail_string =
                     lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
@@ -221,7 +301,11 @@ impl Distro {
                     &lv_detail_string
                 );
 
+                let recovery_disk_name = helper::get_recovery_disk_path(cli_info).split_off(5);
                 for line in lv_detail_string.lines() {
+                    if line.contains(&recovery_disk_name) {
+                        continue;
+                    }
                     let mut v: Vec<&str> = line.trim().split(' ').collect();
                     v.retain(|&x| !x.is_empty());
 
@@ -247,6 +331,7 @@ impl Distro {
         let recovery_disk_path = helper::get_recovery_disk_path(cli_info);
 
         debug!("recovery_disk_path: {}", recovery_disk_path);
+        debug!("what_distro: Partitions to be processed: {:#?}", partitions);
 
         if mount::mkdir_assert().is_err() {
             error!("Error creating assert dir. ALAR is not able to proceed. Exiting.");
@@ -261,8 +346,21 @@ impl Distro {
             }
 
             if partition.part_type == "8E00" && partition.fstype == "LVM2_member" {
+                // Due to issues with RHEL above version 9.x we need to check whether the repair VM is allowed to use LVM based recovery disks
+                if !Self::is_repairvm_with_lvm_allowed() {
+                    telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                      "LVM based recovery disks are not supported on repair VMs with OS version >= 9.x.",
+                        "Distro::is_repairvm_allowed_to_use_lvm() -> get_repair_os_version() returned >= 9.x",
+                        cli_info,
+                        distro,
+                )).ok();
+                    process::exit(1);
+                }
+
                 debug!("Found LVM partition. Executing read_distro_name_version_from_lv");
-                return Self::read_distro_name_version_from_lv(partition, distro.is_ade);
+                return Self::read_distro_name_version_from_lv(partition, distro.is_ade, cli_info);
             }
 
             // Above we handle any kind of LVM partition including an encrypted one.
@@ -286,7 +384,22 @@ impl Distro {
                 }
             }
 
-            let mount_path = format!("{}{}", &recovery_disk_path, partition.number);
+            let mount_path = match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                    debug!("Detected NVMe controller for recovery disk.");
+                    format!("{}p{}", &recovery_disk_path, partition.number)
+                }
+                Ok(_is_nvme @ false) => {
+                    debug!("Detected SCSI controller for recovery disk.");
+                    format!("{}{}", &recovery_disk_path, partition.number)
+                }
+
+                Err(e) => {
+                    error!("Error detecting NVMe controller: {e}");
+                    process::exit(1);
+                }
+            };
+
             debug!(
                 "Mounting partition number {} to {}",
                 partition.number, &mount_path
@@ -315,8 +428,8 @@ impl Distro {
                 // If the partition is marked as 'crypt?' the partition path needs to be corrected
                 "crypt?" => {
                     let partition_path = constants::ADE_OSENCRYPT_PATH;
-                    let fstype = Self::get_partition_filesystem(partition_path)
-                        .unwrap_or("xfs".to_string());
+                    let fstype =
+                        Self::get_partition_filesystem(partition_path).unwrap_or("xfs".to_string());
                     debug!("Filesystem type for the encrypted partition is: {}", fstype);
 
                     match mount::fsck_partition(partition_path) {
@@ -401,7 +514,7 @@ impl Distro {
                 if mount::rmdir(constants::ASSERT_PATH).is_ok() {
                     info!("Removed assert path");
                 } else {
-                    error!("Erro removing directory ASSER_PATH");
+                    error!("Error removing directory ASSER_PATH");
                 }
 
                 return Some(DistroNameVersion {
@@ -419,7 +532,7 @@ impl Distro {
         if mount::rmdir(constants::ASSERT_PATH).is_ok() {
             info!("Removed assert path");
         } else {
-            error!("Erro removing directory ASSER_PATH");
+            error!("Error removing directory ASSER_PATH");
         }
         // If we reach this point we haven't found the OS partition
         // which could point out to operate on a data disk.
@@ -428,14 +541,19 @@ impl Distro {
 
     fn ade_set_no_lvm_partiton_fs(partitions: &mut [PartInfo]) {
         // This will only affect the partitions which are marked as 'crypt?' as this is an indicator for an encrypted partition.
-        partitions.iter_mut().filter(|partition| partition.fstype == "crypt?").for_each(|part| {
-            part.fstype = Self::get_partition_filesystem(constants::ADE_OSENCRYPT_PATH).unwrap_or("xfs".to_string());
-        });
+        partitions
+            .iter_mut()
+            .filter(|partition| partition.fstype == "crypt?")
+            .for_each(|part| {
+                part.fstype = Self::get_partition_filesystem(constants::ADE_OSENCRYPT_PATH)
+                    .unwrap_or("xfs".to_string());
+            });
     }
 
     fn read_distro_name_version_from_lv(
         partinfo: &mut PartInfo,
         is_ade: bool,
+        cli_info: &CliInfo,
     ) -> Option<DistroNameVersion> {
         let volumes = &partinfo.logical_volumes;
         let mut _name = "".to_string();
@@ -449,6 +567,13 @@ impl Distro {
         if let LogicalVolumesType::Some(lv) = volumes {
             if lv.is_empty() {
                 error!("No rootlv found in LVM. This is a not supported LVM setup. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "No rootlv found in LVM.",
+                     "Distro::read_distro_name_version_from_lv() -> LogicalVolumesType::Some returned empty vector",
+                     cli_info,
+                     &Distro::default(),
+                )).ok();
                 process::exit(1);
             }
             // Find the rootlv and mount it
@@ -485,7 +610,7 @@ impl Distro {
                 .for_each(|volume| {
                     let mount_option = if volume.fstype == "xfs" { "nouuid" } else { "" };
 
-                    let partition_path = if is_ade  {
+                    let partition_path = if is_ade {
                         constants::RESCUE_ADE_USRLV
                     } else {
                         constants::ROOTVG_USRLV
@@ -554,14 +679,19 @@ impl Distro {
         partitions.iter().any(|part| part.fstype == "crypt?")
     }
 
-    fn enable_ade(
-        cli_info: &mut CliInfo,
-        partition_details: &mut [PartInfo],
-        distro: &mut Distro,
-    ) {
+    fn enable_ade(cli_info: &mut CliInfo, partition_details: &mut [PartInfo], distro: &mut Distro) {
         match ade::prepare_ade_environment(cli_info, partition_details).is_err() {
             true => {
                 error!("Error preparing ADE environment. ALAR is not able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                    "Error preparing ADE environment.",
+                    "Distro::enable_ade() -> ade::prepare_ade_environment() returned error",
+                    cli_info,
+                    distro,
+                ))
+                .ok();
                 process::exit(1);
             }
             false => {
@@ -609,12 +739,20 @@ impl Distro {
         }
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
+        let mut lv_detail_string: String = String::with_capacity(64);
+        match helper::run_fun(&format!(
+            "lsblk -ln {} -o NAME,FSTYPE | sed '1d'",
+            constants::ADE_OSENCRYPT_PATH
+        )) {
+            Ok(value) => {
+                lv_detail_string = value;
+            }
+            Err(e) => {
+                error!("Error getting LV details from ADE disk: {e}");
+                process::exit(1);
+            }
+        };
 
-        let lv_detail =
-            helper::run_fun(&format!("lsblk -ln {} -o NAME,FSTYPE | sed '1d'", constants::ADE_OSENCRYPT_PATH));
-
-        let lv_detail_string =
-            lv_detail.expect("lsblk shouldn't raise an error when getting fs information");
         debug!(
             " ade_prepare_lv :: lv_detail_string: {:?}",
             &lv_detail_string
@@ -655,7 +793,7 @@ impl Distro {
                The ADE disk gets decrypted and if we find an LVM signature we need to import the VG.
                Also, the LV on it get determined.
             */
-            Self::enable_ade(cli_info, &mut partition_details,  &mut distro);
+            Self::enable_ade(cli_info, &mut partition_details, &mut distro);
             Self::ade_prepare_lv(&mut partition_details, &mut distro);
         } else {
             /*
@@ -676,6 +814,15 @@ impl Distro {
                 error!("Please make sure the disk isn't a Data-disk.");
                 error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
                 error!("ALAR isn't able to proceed. Exiting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                    "No OS partition found during distro detection.",
+                    "Distro::new() -> what_distro_name_version() returned None",
+                    cli_info,
+                    &distro,
+                ))
+                .ok();
                 process::exit(1);
             }
         };

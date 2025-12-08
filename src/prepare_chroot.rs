@@ -5,11 +5,14 @@ use crate::distro::LogicalVolumesType;
 use crate::distro::PartInfo;
 use crate::helper;
 use crate::mount;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
+use log::error;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::process;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
     let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
@@ -78,6 +81,16 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
     }
 }
 
+// A helper function to get the corrected recovery disk path
+// depending if we have an NVMe controller or not
+fn get_corrected_recover_path(cli_info: &cli::CliInfo) -> String {
+    if helper::is_nvme_controller().unwrap_or(false) {
+        format!("{}p", helper::get_recovery_disk_path(cli_info))
+    } else {
+        helper::get_recovery_disk_path(cli_info)
+    }
+}
+
 pub fn set_environment(
     distro: &distro::Distro,
     cli_info: &cli::CliInfo,
@@ -109,8 +122,8 @@ pub fn set_environment(
             "boot_part_path",
             format!(
                 "{}{}",
-                helper::get_recovery_disk_path(cli_info),
-                partitions.get("boot").unwrap().number.to_string()
+                get_corrected_recover_path(cli_info),
+                partitions.get("boot").unwrap().number
             ),
         );
     }
@@ -123,8 +136,8 @@ pub fn set_environment(
             "efi_part_path",
             format!(
                 "{}{}",
-                helper::get_recovery_disk_path(cli_info),
-                partitions.get("efi").unwrap().number.to_string()
+                get_corrected_recover_path(cli_info),
+                partitions.get("efi").unwrap().number
             ),
         );
     }
@@ -211,11 +224,21 @@ fn mount_required_partitions<'a>(
         if distro.is_ade {
             constants::ADE_OSENCRYPT_PATH.to_string()
         } else {
-            format!(
-                "{}{}",
-                helper::get_recovery_disk_path(cli),
-                partitions.get("os").unwrap().number
-            )
+            match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                        debug!("Detected NVMe controller for recovery disk.");
+                        format!( "{}p{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
+                    }
+               Ok(_is_nvme @ false) => {
+                        debug!("Detected SCSI controller for recovery disk.");
+                        format!( "{}{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
+                    }
+                
+                Err(e) => {
+                    error!("Error detecting NVMe controller: {e}");
+                    process::exit(1);
+                }
+            }
         }
     };
 
@@ -277,6 +300,13 @@ fn mount_required_partitions<'a>(
                 ) {
                     Ok(()) => {}
                     Err(e) => {
+                        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                            "ALAR EXCEPTION",
+                             &format!("Unable to mount the logical volume : {}", lv.name),
+                             "prepare_chroot() -> mount() raised an error",
+                             cli,
+                             distro,
+                        )).ok();
                         panic!(
                             "Unable to mount the logical volume : {} Error is: {}",
                             lv.name, e
@@ -308,6 +338,13 @@ fn mount_required_partitions<'a>(
 
     // Even if we have an ADE encrpted disk the boot partition and the efi partition are not encrypted
     let rescue_disk_path = helper::get_recovery_disk_path(cli);
+
+    //If we have a NVME controller, we need to add 'p' before the partition number
+    let rescue_disk_path = if helper::is_nvme_controller().unwrap_or(false) {
+        format!("{}p", rescue_disk_path)
+    } else {
+        rescue_disk_path
+    };
 
     // The order is again important. First /boot then /boot/efi
     // Verify also if we have a boot partition, Ubuntu doesn't have one for example

@@ -3,19 +3,24 @@ use crate::{
     cli::{self, CliInfo},
     constants,
     distro::{Distro, LogicalVolumesType},
-    mount,
+    mount, nvme, telemetry,
 };
 use anyhow::{anyhow, Context, Result};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    fs, path::Path, process::{self, Command}
+    fs,
+    path::{self, Path},
+    process::{self, Command},
+    time::Duration,
 };
 
+use glob;
+
 // There are issue with readlink or readpath. Somehow the pathes can't be resolved correctly
-// The following functions are a workaround to get the correct path and the detemine the partition numbers
-// based on those detalis we can get the partition path
+// The following functions are a workaround to get the correct path and to determine the partition numbers
+// based on those details we can get from the partition path.
 pub(crate) fn realpath(path: &str) -> Result<String> {
     let device = Command::new("readlink")
         .arg("-fe")
@@ -33,22 +38,61 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
     let error_condition = |e| {
         error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
         error!("Error detail: {}", e);
-        process::exit(1);
+
+        match telemetry::send_envelope(&telemetry::create_exception_envelope(
+            telemetry::SeverityLevel::Error,
+            "ALAR EXCEPTION",
+            "Error getting recovery disk partition information.",
+            &format!(
+                "Distro::get_all_recovery_partitions() -> helper::run_fun() returned error: {}",
+                e
+            ),
+            cli_info,
+            &Distro::default(),
+        )) {
+            Ok(_) => {}
+            Err(e) => debug!("Failed to send telemetry data: {}", e),
+        }
     };
 
     if !cli_info.custom_recover_disk.is_empty() {
         match realpath(&cli_info.custom_recover_disk) {
             Ok(path) => {
+                debug!("Using custom recovery disk path: {}", cli_info.custom_recover_disk);
                 path_info = path;
             }
-            Err(e) => error_condition(e),
+            Err(e) => {
+                error_condition(e);
+                process::exit(1);
+            }
         }
     } else {
-        match realpath(constants::RESCUE_DISK) {
-            Ok(path) => {
-                path_info = path;
+        match is_nvme_controller() {
+            Ok(is_nvme) => {
+                if is_nvme {
+                    path_info = match nvme::get_recovery_nvme_disk_path() {
+                        Ok(path) => path,
+                        Err(e) => {
+                            error_condition(e);
+                            process::exit(1);
+                        }
+                    };
+                } else {
+                    match realpath(constants::RESCUE_DISK) {
+                        Ok(path) => {
+                            path_info = path;
+                        }
+                        Err(e) => {
+                            error_condition(e);
+                            process::exit(1)
+                        }
+                    }
+                }
             }
-            Err(e) => error_condition(e),
+            Err(e) => {
+                error_condition(e);
+                process::exit(1);
+            }
         }
     };
     path_info
@@ -65,8 +109,10 @@ pub(crate) fn is_repair_vm_imds() -> Result<bool> {
     let data = client
         .get("http://169.254.169.254/metadata/instance/compute/?api-version=2021-02-01")
         .header("Metadata", "true")
+        .timeout(Duration::from_secs(4))
         .send()?
         .text()?;
+
     let data: Value = serde_json::from_str(&data)?;
     let data = data["tagsList"]
         .as_array()
@@ -112,7 +158,7 @@ pub(crate) fn cleanup(distro: &Distro, cli_info: &CliInfo) -> Result<()> {
             .filter(|lvm| matches!(lvm.logical_volumes, LogicalVolumesType::Some(_)))
             .for_each(|_| {
                 info!("Cleaning up at the end of the recovery process.");
-                
+
                 match mount::disable_broken_disk(cli_info) {
                     Ok(_) => {}
                     Err(e) => {
@@ -203,36 +249,130 @@ fn load_local_action_scripts(directory_source: &str) -> Result<()> {
         .context("Copying the content of the script directory to '/tmp' failed")?;
     Ok(())
 }
-
+// By default all the action scripts will be part of the generated binary.
+// During runtime those scripts will be written to the disk for further usage.
+// The intend is to make ALAR independent from network access to be able to
+// run in an isolated environment.
+// However, if network access is available the user can decide to download
+// the latest action scripts from the remote repository or to provide a local
+// directory utilizing self devlopped action scripts.
+// Use the 'help' option what options are available.
 fn write_builtin_action_scripts() -> Result<()> {
-
     fs::create_dir_all(constants::ACTION_IMPL_DIR)
         .context("Directory ACTION_IMPL_DIR can not be created")?;
-    
 
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "auditd-impl.sh"), constants::AUDITD_IMPL_FILE)
-        .context("Writing auditd-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "efifix-impl.sh"), constants::EFIFIX_IMPL_FILE)
-        .context("Writing efifix-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"), constants::FSTAB_IMPL_FILE)
-        .context("Writing fstab-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "grub.awk"), constants::GRUB_AKW_FILE)
-        .context("Writing grub.awk failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "grubfix-impl.sh"), constants::GRUBFIX_IMPL_FILE)
-        .context("Writing grubfix-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "helpers.sh"), constants::HELPERS_SH_FILE)    
-        .context("Writing helpers.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "initrd-impl.sh"), constants::INITRD_IMPL_FILE)
-        .context("Writing initrd-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "kernel-impl.sh"), constants::KERNEL_IMPL_FILE)
-        .context("Writing kernel-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "safe-exit.sh"), constants::SAFE_EXIT_FILE)
-        .context("Writing safe-exit.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "serialconsole-impl.sh"), constants::SERIALCONSOLE_IMPL_FILE)
-        .context("Writing serialconsole-impl.sh failed")?;
-    fs::write(format!("{}/{}", constants::ACTION_IMPL_DIR, "test-impl.sh"), constants::TEST_IMPL_FILE)
-        .context("Writing test-impl.sh failed")?;
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "auditd-impl.sh"),
+        constants::AUDITD_IMPL_FILE,
+    )
+    .context("Writing auditd-impl.sh failed")?;
 
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "efifix-impl.sh"),
+        constants::EFIFIX_IMPL_FILE,
+    )
+    .context("Writing efifix-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"),
+        constants::FSTAB_IMPL_FILE,
+    )
+    .context("Writing fstab-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "grub.awk"),
+        constants::GRUB_AKW_FILE,
+    )
+    .context("Writing grub.awk failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "grubfix-impl.sh"),
+        constants::GRUBFIX_IMPL_FILE,
+    )
+    .context("Writing grubfix-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "helpers.sh"),
+        constants::HELPERS_SH_FILE,
+    )
+    .context("Writing helpers.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "initrd-impl.sh"),
+        constants::INITRD_IMPL_FILE,
+    )
+    .context("Writing initrd-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "kernel-impl.sh"),
+        constants::KERNEL_IMPL_FILE,
+    )
+    .context("Writing kernel-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "safe-exit.sh"),
+        constants::SAFE_EXIT_FILE,
+    )
+    .context("Writing safe-exit.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "serialconsole-impl.sh"),
+        constants::SERIALCONSOLE_IMPL_FILE,
+    )
+    .context("Writing serialconsole-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "test-impl.sh"),
+        constants::TEST_IMPL_FILE,
+    )
+    .context("Writing test-impl.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "sudo-impl.sh"),
+        constants::SUDO_IMPL_FILE,
+    )
+    .context("Writing sudo-impl.sh failed")?;
 
     Ok(())
+}
+
+pub(crate) fn get_repair_os_name() -> Result<String> {
+    let os_release = fs::read_to_string("/etc/os-release")
+        .context("Unable to read /etc/os-release to determine the OS name")?;
+    for line in os_release.lines() {
+        if line.starts_with("PRETTY_NAME=") {
+            let os_name_version = line.trim_start_matches("PRETTY_NAME=").trim_matches('"');
+            return Ok(os_name_version.to_string());
+        }
+    }
+    Err(anyhow!(
+        "Unable to determine the OS name from /etc/os-release"
+    ))
+}
+
+pub(crate) fn get_repair_os_version() -> Result<String> {
+    let os_release = fs::read_to_string("/etc/os-release")
+        .context("Unable to read /etc/os-release to determine the OS version")?;
+    for line in os_release.lines() {
+        if line.starts_with("VERSION_ID=") {
+            let os_version = line.trim_start_matches("VERSION_ID=").trim_matches('"');
+            return Ok(os_version.to_string());
+        }
+    }
+    Err(anyhow!(
+        "Unable to determine the OS version from /etc/os-release"
+    ))
+}
+
+pub(crate) fn is_nvme_controller() -> Result<bool> {
+    if Path::new("/sys/class/nvme").try_exists().context("Veryfing /sys/class/nvme throw an error")?  {
+        // Need a double check as on Ubuntu the nvme directory is present even if no nvme controller is available
+        if glob::glob("/sys/class/nvme/nvme*").context("Glob pattern matching failed")?.count() > 0 {
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
 }

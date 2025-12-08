@@ -10,6 +10,7 @@ use crate::distro;
 use crate::distro::PartInfo;
 use crate::helper;
 use crate::mount;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
@@ -255,6 +256,13 @@ fn enable_encrypted_partition(
                 }
                 umount_boot_partition()?;
                 close_rescueencrypt()?;
+                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                     "Enabeling the encrypted device isn't possible.",
+                     "enable_encrypted_partition() -> cryptsetup luksOpen raised an error",
+                     cli_info,
+                     &distro::Distro::default(),
+                )).ok();
                 error!("Error: Enabeling the encrypted device isn't possible. Please verify that the passphrase is correct. ALAR needs to stop.");
                 process::exit(1);
             }
@@ -264,6 +272,13 @@ fn enable_encrypted_partition(
             umount_boot_partition()?;
             fs::remove_file(constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME)?;
             error!("Error: Enabeling the encrypted device isn't possible. ALAR needs to stop. Error detail is: {e}");
+            telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                 "Enabeling the encrypted device isn't possible.",
+                 "enable_encrypted_partition() -> cryptsetup luksOpen raised an error",
+                 cli_info,
+                 &distro::Distro::default(),
+            )).ok();
             process::exit(1);
         }
     }

@@ -2,6 +2,7 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
 use crate::helper;
+use crate::telemetry;
 use anyhow::Result;
 use log::debug;
 use log::error;
@@ -33,6 +34,13 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
     // We need to load the driver first
     process::Command::new("modprobe").arg("xfs").status().map_err(|open_error | {
         error!("Loading of the module xfs was not possible. This may result in mount issues! : {open_error}");
+        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Warning,
+            "ALAR WARNING",
+             "Loading of the xfs module was not possible.",
+             "mount() -> modprobe xfs raised an error",
+             &CliInfo::default(),
+             &distro::Distro::default(),
+        )).ok();
         open_error
     })?;
 
@@ -41,6 +49,15 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
         Err(open_error) => {
             error!("Failed to get supported file systems: Detail {open_error}");
             error!("This is a severe issue for ALAR. Aborting.");
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                "Failed to get supported file systems.",
+                "mount() -> sys_mount::SupportedFilesystems::new() raised an error",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             process::exit(1);
         }
     };
@@ -54,6 +71,15 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
             error!("Failed to mount {source} on {destination}: {mount_error}");
             if !is_relaxed {
                 error!("This is a severe issue for ALAR. Aborting.");
+                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
+                    "ALAR EXCEPTION",
+                    &format!("Failed to mount {source} on {destination}."),
+                    "mount() -> sys_mount::Mount::builder().mount() raised an error",
+                    &CliInfo::default(),
+                    &distro::Distro::default(),
+                ))
+                .ok();
                 process::exit(1);
             }
             mount_error
@@ -131,7 +157,10 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
                 .status()
             {
                 exit_code = stat.code();
-                 debug!("Inside second fsck for XFS : xfs_repair returned with exit code: {:?}", exit_code);
+                debug!(
+                    "Inside second fsck for XFS : xfs_repair returned with exit code: {:?}",
+                    exit_code
+                );
             }
 
             /*
@@ -191,9 +220,29 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
         Some(_code @ 1) if partition_filesystem == "xfs" => {
             error!("A general error occured while trying to recover the device {partition_path}.");
             error!("Stopping ALAR");
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                &format!(
+                    "A general error occured while trying to recover the device {partition_path}."
+                ),
+                "Inside fsck_partition() -> xfs_repair returned exit code 1",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             process::exit(1);
         }
         None => {
+            telemetry::send_envelope(&telemetry::create_exception_envelope(
+                telemetry::SeverityLevel::Error,
+                "ALAR EXCEPTION",
+                "fsck operation terminated by signal.",
+                "Inside fsck_partition() -> process::Command::status() returned None",
+                &CliInfo::default(),
+                &distro::Distro::default(),
+            ))
+            .ok();
             panic!(
                 "fsck operation terminated by signal error. ALAR is not able to proceed further!"
             );
@@ -269,15 +318,29 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
             Ok(())
         } else {
             debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
-            let disk_path = format!(
-                "{}{}",
-                helper::get_recovery_disk_path(cli_info),
-                partition_number
-            );
 
-            helper::run_cmd(&format!(
-                "vgimportclone -n rescuevg {disk_path}; vgscan --mknodes"
-            ))?;
+            match helper::is_nvme_controller() {
+                Ok(_is_nvme @ true) => {
+                    debug!("Detected NVMe controller for recovery disk.");
+                    helper::run_cmd(&format!(
+                        "vgimportclone -n rescuevg {}p{}; vgscan --mknodes",
+                        helper::get_recovery_disk_path(cli_info),
+                        partition_number
+                    ))?;
+                }
+                Ok(_is_nvme @ false) => {
+                    debug!("Detected SCSI controller for recovery disk.");
+                    helper::run_cmd(&format!(
+                        "vgimportclone -n rescuevg {}{}; vgscan --mknodes",
+                        helper::get_recovery_disk_path(cli_info),
+                        partition_number
+                    ))?;
+                }
+                Err(e) => {
+                    error!("Error while detecting the controller type: {e}");
+                    process::exit(1);
+                }
+            };
 
             helper::run_cmd("vgrename rootvg oldvg; vgrename rescuevg rootvg; vgchange -ay")?;
 
@@ -316,13 +379,21 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
 }
 
 pub(crate) fn rename_oldvg() {
+    // Only used for scsi disk. NVMe is currently not supported
+    // It is run at the end of the recovery process to rename oldvg to rootvg
+    // If it fails it is considered non fatal as the recovery process has finished anyway
     debug!("Inside rename_oldvg");
+
     if helper::run_cmd("vgrename oldvg rootvg").is_err() {
         error!("Failed to rename oldvg to rootvg");
     }
 }
 
 pub(crate) fn rescan_host() -> Result<()> {
+    // Only used for scsi disk. NVMe is currently not supported
+    // Rescan can't be run on a NVMe it is not possible to select a distinct disk
+    // It is verified at the start of the recover process whether the recover VM is basedon LVM or not
+    //  If it is LVM based a LVM recover is no supported on a VG with the name rootvg, like we have on RedHat
     debug!("Inside rescan_host");
 
     let old_mounts = helper::run_fun(
@@ -343,7 +414,7 @@ pub(crate) fn rescan_host() -> Result<()> {
             println!("udevadm trigger was successful")
         }
         Err(e) => {
-            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executed. Some error got thrown: {e}");
+            error!("rescan_host :: udevadm triger raised an err or wasn't able to be executed. Error: {e}");
         }
     }
 
@@ -388,14 +459,21 @@ pub(crate) fn rescan_host() -> Result<()> {
     Ok(())
 }
 
+// This function does support only scsi backed devices
 pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
     debug!("Inside disable_broken_disk");
     let recover_disk = helper::get_recovery_disk_path(cli_info).replace("/dev/", "");
     helper::run_cmd("vgchange -an rootvg")?;
 
+    // If we have an NVMe controller we skip the next steps as they are not applicable
+    if helper::is_nvme_controller().unwrap_or(false) {
+        return Ok(());
+    }
+
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
     Ok(())
 }
+
 pub(crate) fn bind_mount(source: &str, destination: &str) -> Result<()> {
     let supported_fs = sys_mount::SupportedFilesystems::new()?;
 
