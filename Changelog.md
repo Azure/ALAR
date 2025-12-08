@@ -16,8 +16,8 @@ Support for Telemetry is added. Just basic information get tracked:
 These information assist to improve existing actions and the base framework.
 
 - Added support for the NVME controller type
-  - The repair of a LVM based recover OS disk with the help of a recover VM which is also
-    LVM based is limited on this kind of controller type. Only supported is to use a RHEL version < 9
+- The repair of a LVM based recover OS disk with the help of a recover VM which is also
+  LVM based is limited. Only supported is RHEL version < 9
 
 
 ## 1.1.0 (2025-10-31)
