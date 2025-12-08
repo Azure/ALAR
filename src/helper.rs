@@ -11,10 +11,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     fs,
-    path::Path,
+    path::{self, Path},
     process::{self, Command},
     time::Duration,
 };
+
+use glob;
 
 // There are issue with readlink or readpath. Somehow the pathes can't be resolved correctly
 // The following functions are a workaround to get the correct path and to determine the partition numbers
@@ -363,5 +365,14 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller() -> Result<bool> {
-    Path::new("/sys/class/nvme").try_exists().context("Veryfing /sys/class/nvme throw an error")
+    if Path::new("/sys/class/nvme").try_exists().context("Veryfing /sys/class/nvme throw an error")?  {
+        // Need a double check as on Ubuntu the nvme directory is present even if no nvme controller is available
+        if glob::glob("/sys/class/nvme/nvme*").context("Glob pattern matching failed")?.count() > 0 {
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
 }
