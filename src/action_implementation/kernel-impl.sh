@@ -15,8 +15,8 @@ if [[ ${isRedHat} == "true" ]]; then
 	# Generate both config files.
 	# TODO - check if we need to generate both. Newer distro version don't require this anymore. Let us create a backup therefore.
 	cp /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg.bak
-	grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
-	grub2-mkconfig -o /boot/grub2/grub.cfg
+	GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
+	GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
 
 	# enable sysreq
 	echo "kernel.sysrq = 1" >>/etc/sysctl.conf
