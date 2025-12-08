@@ -1,9 +1,24 @@
 # Changelog
 
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## 1.3.1 (2025-12-08)
+Support for Telemetry is added. Just basic information get tracked: 
+ - Repair and Recovery VM distro name and version
+ - action name
+ - architecture
+ - What initiator (CLI, RecoverVM, SelfHelp)
+ - Any error logged 
+These information assist to improve existing actions and the base framework.
+
+- Added support for the NVME controller type
+  - The repair of a LVM based recover OS disk with the help of a recover VM which is also
+    LVM based is limited on this kind of controller type. Only supported is to use a RHEL version < 9
+
 
 ## 1.1.0 (2025-10-31)
 Added sudo implementation 1.0.0 and updated helpers.sh to 1.1.0 with related functions
