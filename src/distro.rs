@@ -9,6 +9,7 @@ use anyhow::Result;
 use log::debug;
 use log::error;
 use log::info;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::{
     fs,
@@ -129,23 +130,97 @@ impl PartInfo {
 }
 
 impl Distro {
-    fn get_all_partitions(disk_path: &str) -> String {
-        let command = format!("sgdisk {disk_path} -p | tail -n-5 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
-        match helper::run_fun(&command) {
-            Ok(partitions) => partitions,
+    fn split_fields(line: &str) -> Vec<String> {
+        line.split_whitespace().map(|s| s.to_string()).collect()
+    }
+
+    fn get_partitions_and_types(disk_path: &str) -> Vec<(String, String)> {
+        let mut partition_numbers_types: Vec<(String, String)> = Vec::with_capacity(6);
+        let uuid_type_map = HashMap::from([
+            (
+                "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+                "Linux Root Partition 0x8304",
+            ),
+            (
+                "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+                "EFI System Partition 0xEF00",
+            ),
+            ("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f", "Linux Swap 0x8200"),
+            (
+                "21686148-6449-6e6f-744e-656564454649",
+                "Basic Boot Partition 0xEF02",
+            ),
+            (
+                "0fc63daf-8483-4772-8e79-3d69d8477de4",
+                "Linux Filesystem Data 0x8300",
+            ),
+            (
+                "e6d6d379-f507-44c2-a23c-238f2a3df928",
+                "Logical Volume Manager 0x8E00",
+            ),
+        ]);
+
+        match Path::new("/usr/sbin/sgdisk").try_exists() {
+            Ok(_is_present @ true) => {
+                debug!("sgdisk is present on the system.");
+                let command = format!("sgdisk {disk_path} -p | tail -n6 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
+                match helper::run_fun(&command) {
+                    Ok(partitions) => {
+                        for line in partitions.lines() {
+                            let fields = Self::split_fields(line);
+                            let partition_number = fields[0].to_string();
+                            let partition_type = fields[5].to_string();
+                            partition_numbers_types.push((partition_number, partition_type));
+                        }
+                        debug!(
+                            "Partition numbers and types collected via sgdisk: {:#?}",
+                            &partition_numbers_types
+                        );
+                        partition_numbers_types
+                    }
+                    Err(e) => {
+                        error!("Error getting disk info for disk {} with the help of sgdisk : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
+                        process::exit(1);
+                    }
+                }
+            }
+            Ok(_is_present @ false) => {
+                debug!("sgdisk is not present on the system. Falling back to partx.");
+                // The command constucted below will list partition numbers and types excluding the BOOT partition 
+                let command = format!("partx {disk_path} -gs -o NR,TYPE | grep -v 21686148-6449-6e6f-744e-656564454649");
+                match helper::run_fun(&command) {
+                    Ok(partitions) => {
+                        for  line in  partitions.lines() {
+                            let fields: Vec<String> = Self::split_fields(line); 
+                            let partition_number = fields[0].to_string();
+                            let partition_type = fields[1].to_string();
+                            partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
+                        }
+                        debug!(
+                            "Partition numbers and types collected via partx: {:#?}",
+                            &partition_numbers_types
+                        );
+                        partition_numbers_types
+                    }
+                    Err(e) => {
+                        error!("Error getting disk info for disk {} with the help of parted : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
+                        process::exit(1);
+                    }
+                }
+            }
             Err(e) => {
-                error!("Error getting disk info for disk {}. Something went wrong : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
+                error!("Error checking for sgdisk presence: {} A general error occured. ALAR is not able to proceed. Exiting.", e);
                 process::exit(1);
             }
         }
     }
 
-    fn get_all_recovery_partitions(cli_info: &CliInfo) -> String {
+    fn get_relevant_recover_partition_information(cli_info: &CliInfo) -> Vec<(String, String)> {
         let recover_disk = helper::get_recovery_disk_path(cli_info);
-        Self::get_all_partitions(&recover_disk)
+        Self::get_partitions_and_types(&recover_disk)
     }
 
-    /// Check whether LVM is in use on the repair VM
+    // Check whether LVM is in use on the repair VM
     fn is_lvm_on_repair_disk() -> bool {
         match helper::run_fun("findmnt | grep mapper | grep usr") {
             Ok(output) => !output.trim().is_empty(),
@@ -201,18 +276,17 @@ impl Distro {
     }
 
     fn get_partition_details(cli_info: &CliInfo) -> Vec<PartInfo> {
-        let mut parts: Vec<PartInfo> = Vec::new();
-        let disk_info = Self::get_all_recovery_partitions(cli_info);
+        let mut recover_partitions: Vec<PartInfo> = Vec::new();
+        let partition_numbers_types = Self::get_relevant_recover_partition_information(cli_info);
 
-        for line in disk_info.lines() {
-            let v: Vec<&str> = line.trim().split(' ').collect();
-            let _number = v[0].to_string().parse::<i32>().unwrap();
-            let _part_type = v[5].to_string();
+        for (partition_number, partition_type) in partition_numbers_types.iter() {
+            let number = partition_number.to_string().parse::<i32>().unwrap();
+            let part_type = partition_type.to_string();
 
             let partition_path = if helper::is_nvme_controller().unwrap_or(false) {
-                format!("{}p{}", helper::get_recovery_disk_path(cli_info), _number)
+                format!("{}p{}", helper::get_recovery_disk_path(cli_info), number)
             } else {
-                format!("{}{}", helper::get_recovery_disk_path(cli_info), _number)
+                format!("{}{}", helper::get_recovery_disk_path(cli_info), number)
             };
 
             let mut partition_fstype = if let Ok(pfs) =
@@ -240,15 +314,15 @@ impl Distro {
                 partition_fstype = partition_fstype.trim().to_string();
             }
 
-            parts.push(PartInfo {
-                number: _number,
-                part_type: _part_type,
+            recover_partitions.push(PartInfo {
+                number,
+                part_type,
                 fstype: partition_fstype,
                 contains_os: false,
                 logical_volumes: LogicalVolumesType::None,
             });
         }
-        parts
+        recover_partitions
     }
 
     fn build_logical_volume_details(
@@ -258,8 +332,9 @@ impl Distro {
     ) {
         let mut lv: Vec<LogicalVolume> = Vec::new();
 
+
         part.iter_mut()
-            .filter(|lvm| lvm.part_type == "8E00")
+            .filter(|lvm| lvm.part_type.contains("8E00"))
             .for_each(|part| {
                 let lvm_partition = if helper::is_nvme_controller().unwrap_or(false) {
                     format!(
@@ -341,11 +416,11 @@ impl Distro {
         // cycling through each of the partitions to figure out what sort of partition we do have
         for partition in partitions {
             // EFI part no need to check
-            if partition.part_type == "EF00" {
+            if partition.part_type.contains("EF00") {
                 continue;
             }
 
-            if partition.part_type == "8E00" && partition.fstype == "LVM2_member" {
+            if partition.part_type.contains("8E00") && partition.fstype == "LVM2_member" {
                 // Due to issues with RHEL above version 9.x we need to check whether the repair VM is allowed to use LVM based recovery disks
                 if !Self::is_repairvm_with_lvm_allowed() {
                     telemetry::send_envelope(&telemetry::create_exception_envelope(
@@ -730,7 +805,7 @@ impl Distro {
             .unwrap();
 
         // if the partition is not a LVM partition we don't need to proceed
-        if crypt_partition.part_type != "8E00" {
+        if !crypt_partition.part_type.contains("8E00") {
             info!("No LVM partition found on the ADE disk.");
             return;
         } else {
@@ -739,6 +814,8 @@ impl Distro {
         }
 
         let mut lv: Vec<LogicalVolume> = Vec::new();
+
+        #[allow(unused_assignments)]
         let mut lv_detail_string: String = String::with_capacity(64);
         match helper::run_fun(&format!(
             "lsblk -ln {} -o NAME,FSTYPE | sed '1d'",

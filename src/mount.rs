@@ -269,14 +269,8 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
        We need to restore the old mounts later
     */
     let command = "lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'";
-    let old_mounts = process::Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .output()?
-        .stdout;
-
+    let old_mount_lines =helper::run_fun(command)?;
     let mut items: HashMap<&str, &str> = HashMap::new();
-    let old_mount_lines = String::from_utf8(old_mounts)?;
 
     debug!("importvg :: Old mounts: {}", old_mount_lines);
 
@@ -287,7 +281,6 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
         items.insert(key, value);
     });
 
-    //helper::run_cmd("pvscan; vgscan --mknodes; udevadm trigger")?;
     helper::run_cmd("pvscan --cache")?;
     let volume_groups = helper::run_fun("pvs --noheadings -o vg_name")?;
 
