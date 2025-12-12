@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::env;
 use std::time::Duration;
 
+#[allow(dead_code)]
 #[derive(Serialize, Debug)]
 pub enum SeverityLevel {
     Verbose,

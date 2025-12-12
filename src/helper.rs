@@ -11,12 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     fs,
-    path::{self, Path},
+    path::Path,
     process::{self, Command},
     time::Duration,
 };
-
-use glob;
 
 // There are issue with readlink or readpath. Somehow the pathes can't be resolved correctly
 // The following functions are a workaround to get the correct path and to determine the partition numbers
@@ -34,6 +32,7 @@ pub(crate) fn realpath(path: &str) -> Result<String> {
 }
 
 pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
+    #[allow(unused_assignments)]
     let mut path_info = String::new();
     let error_condition = |e| {
         error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
@@ -58,7 +57,10 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
     if !cli_info.custom_recover_disk.is_empty() {
         match realpath(&cli_info.custom_recover_disk) {
             Ok(path) => {
-                debug!("Using custom recovery disk path: {}", cli_info.custom_recover_disk);
+                debug!(
+                    "Using custom recovery disk path: {}",
+                    cli_info.custom_recover_disk
+                );
                 path_info = path;
             }
             Err(e) => {
@@ -365,14 +367,22 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller() -> Result<bool> {
-    if Path::new("/sys/class/nvme").try_exists().context("Veryfing /sys/class/nvme throw an error")?  {
+    if Path::new("/sys/class/nvme")
+        .try_exists()
+        .context("Veryfing /sys/class/nvme throw an error")?
+    {
         // Need a double check as on Ubuntu the nvme directory is present even if no nvme controller is available
-        if glob::glob("/sys/class/nvme/nvme*").context("Glob pattern matching failed")?.count() > 0 {
-            return Ok(true);
+        if glob::glob("/sys/class/nvme/nvme*")
+            .context("Glob pattern matching failed")?
+            .count()
+            > 0
+        {
+            Ok(true)
         } else {
-            return Ok(false);
+            Ok(false)
         }
     } else {
-        return Ok(false);
+        Ok(false)
     }
 }
+

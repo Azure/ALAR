@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.2 (2025-12-12)
+  - Minimal refactoring of the code.
+  - Add 'partx' support as replacement for sgdisk on RHEL 10
+
 ## 1.3.1 (2025-12-08)
 Support for Telemetry is added. Just basic information get tracked: 
  - Repair and Recovery VM distro name and version
