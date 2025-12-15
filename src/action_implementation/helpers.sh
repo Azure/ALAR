@@ -85,7 +85,7 @@ function detect_osfam() {
   export $OSFAM
 }
 # call the function above to set the OSFAM variable for use elsewhere
-detect_osfam()
+detect_osfam
 
 function backup() {
   # Create a backup of a file.
@@ -234,7 +234,7 @@ fixPerm() {
       return 1
       ;;
   esac
-
+}
 
 # -------------------------------------------
 # CHECK: validate current owner/group vs desired
@@ -339,3 +339,4 @@ fixOwner() {
       return 1
       ;;
   esac
+}
