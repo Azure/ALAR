@@ -98,8 +98,8 @@ sudoers_files=$(find /etc/sudoers /etc/sudoers.d -type f 2>/dev/null)
 # using 'helper-defined' functions
 for file in $sudoers_files; do
   ls -alF $file
-  checkPerm $file 0440
-  checkOwner $file root:root
+  fixPerm $file 0440
+  fixOwner $file root:root
 done
 
 # check for the 'targetpw' setting historically from suse, but would be
@@ -110,3 +110,12 @@ if grep -q -e '^Defaults targetpw' /etc/sudoers; then
   sed -i -e "s/^Defaults targetpw/#Defaults targetpw/;s/^ALL/#ALL/" /etc/sudoers
 fi
 # silently do nothing if it was not found
+
+# check the sudo binary for common permissions settings
+# RedHat (and derivatives) use a different set of bits than every other distro
+if [[ "$OSFAM" == "fedora" ]]; then
+	fixPerm $(which sudo) 4111
+else
+	fixPerm $(which sudo) 4755
+fi
+fixOwner $(which sudo) root:root
