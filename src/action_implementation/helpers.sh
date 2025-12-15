@@ -2,6 +2,7 @@
 # -----------------------------------------------------------------------------
 # Version: 1.2.0
 # Released: 2025-10-31
+# Latest update: 2025-12-16
 # Author: Azure Support
 #
 # Copyright (c) Microsoft Corporation. All rights reserved.

@@ -126,7 +126,7 @@ fixOwner $(which sudo) root:root
 # every distro uses 0755 and root:root
 checkOwner /etc root:root
 OWNRC=$?
-checkPerm /etc 755
+checkPerm /etc 0755
 PERMRC=$?
 if  [[ $OWNRC -ne 0 || $PERMRC -ne 0 ]]; then
   echo "WARN: /etc permissions or owner incorrect, manual review of /etc recommended"
