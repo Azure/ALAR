@@ -1,7 +1,8 @@
 #!/usr/bin/bash
 # -----------------------------------------------------------------------------
-# Version: 1.0.0
-# Released: 2025-10-31
+# Version: 1.1.0
+# Initial release: 2025-10-31
+# Latest update: 2025-12-16
 # Author: Azure Support
 #
 # Copyright (c) Microsoft Corporation. All rights reserved.
@@ -19,6 +20,8 @@
 #    reported only
 # - sudoers contains the 'targetpw' flag, which is common in (older?) SUSE
 #   images
+# - the sudo binary does not have the correct setuid bits
+# - /etc has incorrect ownership or permissions, signalling larger issues
 # -----------------------------------------------------------------------------
 #
 # Load helper library
@@ -97,9 +100,8 @@ sudoers_files=$(find /etc/sudoers /etc/sudoers.d -type f 2>/dev/null)
 # Iterate through all the sudo config files and check/fix the permissions
 # using 'helper-defined' functions
 for file in $sudoers_files; do
-  ls -alF $file
-  checkPerm $file 0440
-  checkOwner $file root:root
+  fixPerm $file 0440
+  fixOwner $file root:root
 done
 
 # check for the 'targetpw' setting historically from suse, but would be
@@ -110,3 +112,22 @@ if grep -q -e '^Defaults targetpw' /etc/sudoers; then
   sed -i -e "s/^Defaults targetpw/#Defaults targetpw/;s/^ALL/#ALL/" /etc/sudoers
 fi
 # silently do nothing if it was not found
+
+# check the sudo binary for common permissions settings
+# RedHat (and derivatives) use a different set of bits than every other distro
+if [[ "$OSFAM" == "fedora" ]]; then
+	fixPerm $(which sudo) 4111
+else
+	fixPerm $(which sudo) 4755
+fi
+fixOwner $(which sudo) root:root
+
+# check /etc directory permissions and ownership
+# every distro uses 0755 and root:root
+checkOwner /etc root:root
+OWNRC=$?
+checkPerm /etc 0755
+PERMRC=$?
+if  [[ $OWNRC -ne 0 || $PERMRC -ne 0 ]]; then
+  echo "WARN: /etc permissions or owner incorrect, manual review of /etc recommended"
+fi
