@@ -33,3 +33,4 @@ pub(crate) static SAFE_EXIT_FILE: &str =  include_str!("action_implementation/sa
 pub(crate) static SERIALCONSOLE_IMPL_FILE: &str =  include_str!("action_implementation/serialconsole-impl.sh");
 pub(crate) static TEST_IMPL_FILE: &str =  include_str!("action_implementation/test-impl.sh");
 pub(crate) static SUDO_IMPL_FILE: &str =  include_str!("action_implementation/sudo-impl.sh");
+pub(crate) static CORRUPT_IMPL_FILE: &str =  include_str!("action_implementation/corrupt-impl.sh");
