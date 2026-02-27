@@ -1,6 +1,6 @@
 [package]
 name = "alar"
-version = "1.3.3"
+version = "1.4.0"
 authors = ["malachma <malachma@microsoft.com>", "pagienge <pagienge@microsoft.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -30,4 +30,3 @@ opt-level = "z"
 lto = "fat"
 panic = "abort"
 strip = "symbols"
-
