@@ -30,4 +30,3 @@ opt-level = "z"
 lto = "fat"
 panic = "abort"
 strip = "symbols"
-

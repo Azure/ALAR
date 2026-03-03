@@ -5,7 +5,7 @@ Azure Linux Auto Recover (ALAR) is a tool to assist with the most common issues 
 
 The scenarios the tool can assist you are:
 
-* malformed /etc/fstab 
+* malformed /etc/fstab
   * syntax error
   * missing disk
 * damaged initrd or /boot/grub/grub.cfg is missing the right setup
@@ -15,7 +15,7 @@ The scenarios the tool can assist you are:
 * Disk full causing a non-boot scenario, specifically related to auditd configurations.
 
 It has also the following features
-* does support ADE. Either by decrypting the device, to be recovered, automatically 
+* does support ADE. Either by decrypting the device, to be recovered, automatically
   or with the help of an ADE encryption key passed over to the tool: `--ade-password <password>`
 * A custom recover disk path can be specified if `LUN0`is already occupied: `--custom-recover-disk`
 * By default all action scripts are incorporated into the ALAR tool. This can be of help
@@ -36,7 +36,7 @@ This action does change the default kernel.
 It modifies the configuration so that the previous kernel version gets booted. After the boot the admin is able to replace the broken kernel.
 
 #### initrd
-This action corrects two issues that can happen when a new kernel gets installed 
+This action corrects two issues that can happen when a new kernel gets installed
 1. The grub.cfg file is incorrect created
 2. The initrd image is missing or corrupt
 
@@ -54,10 +54,15 @@ This action is reinstalling the required software to boot from a `GEN2 VM`. The 
 This action will alter the auditd configuration, replacing any HALT directives in the `/etc/audit/auditd.conf` file. Also in LVM environments, if the volume containing the audit logs is full, and free space is available in the volume group, the logical volume will be extended by 10% of the current size.
 
 #### sudo
-The `sudo` action will reset the permissions on the `/etc/sudoers` file and all files in `/etc/sudoers.d` to the required 0440 modes as well as check other best practices.  A basic check is run to detect and report on duplicate user entries and move *only* the `/etc/sudoers.d/waagent` file if it is found to conflict with other files.  
+The `sudo` action will reset the permissions on the `/etc/sudoers` file and all files in `/etc/sudoers.d` to the required 0440 modes as well as check other best practices.  A basic check is run to detect and report on duplicate user entries and move *only* the `/etc/sudoers.d/waagent` file if it is found to conflict with other files.
+
+#### corrupt
+This action does not do any processing on its own in the initial version, it is a vehicle for calling the built-in ALAR functionality
+for mounting and doing some light error checking when the chroot environment is assembled.  If some further checking is required this
+can be built into a future version.
 
 ### How to use ALAR
-ALAR can be used either from the CLI of an existing Azure VM or with the help of the 
+ALAR can be used either from the CLI of an existing Azure VM or with the help of the
 vm-repair extension for the Azure CLI tool.
 
 #### From a SHELL prompt
@@ -73,13 +78,13 @@ In the next step the `run` command option is used to execute ALAR on the repair 
 
   `az vm repair run --verbose -g suse15_group -n suse15 --run-id linux-alar2 --parameters initrd --run-on-repair`
 
-As a final step the `restore` command is used 
+As a final step the `restore` command is used
   `az vm repair restore --verbose -g suse15_group -n suse15`
 
 Detailed information about the `vm-repair extension` is documented at https://learn.microsoft.com/en-us/cli/azure/vm/repair?view=azure-cli-latest
 
 #### What to do if more than one ACTION is require?
-If more than one action has to be applied this is possible as well. Pass over both to ALAR separated by a comma i.e. ‘fstab,initrd’ 
+If more than one action has to be applied this is possible as well. Pass over both to ALAR separated by a comma i.e. ‘fstab,initrd’
 
 **NOTE**
 No spaces allowed!
