@@ -335,6 +335,13 @@ fn write_builtin_action_scripts() -> Result<()> {
     )
     .context("Writing sudo-impl.sh failed")?;
 
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "corrupt-impl.sh"),
+        constants::CORRUPT_IMPL_FILE,
+    )
+    .context("Writing corrupt-impl.sh failed")?;
+
+
     Ok(())
 }
 
@@ -385,4 +392,3 @@ pub(crate) fn is_nvme_controller() -> Result<bool> {
         Ok(false)
     }
 }
-
