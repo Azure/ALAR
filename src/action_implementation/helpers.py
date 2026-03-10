@@ -15,6 +15,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # Define once for the script run so all backups share the same timestamp
 TIMESTAMP = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -27,7 +28,7 @@ def _copy_preserve(src: str, dst: str) -> None:
     os.chown(dst, st.st_uid, st.st_gid)
 
 
-def backup(origfile: str, targetdir: str | None = None) -> int:
+def backup(origfile: str, targetdir: Optional[str] = None) -> int:
     """Create a backup of a file.
 
     Args:

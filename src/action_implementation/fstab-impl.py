@@ -121,6 +121,12 @@ def physical_disks_for_device(devpath):
     walk(real)
     return disks
 
+def find_actual_root_device():
+  # Find the device backing the currently mounted root filesystem via stat
+  dev = os.stat('/').st_dev
+  major, minor = os.major(dev), os.minor(dev)
+  return os.path.realpath(f"/dev/block/{major}:{minor}")
+
 ### End of helper functions ###
 ### Main logic ###
 
@@ -138,8 +144,17 @@ if "RECOVER_DISK_PATH" in os.environ:
   recover_base = _base_disk(os.path.basename(recover_disk))
   print(f"Recovery disk from ALAR environment variable RECOVER_DISK_PATH: {recover_disk}")
   if recover_base not in root_disk:
-    print(f"Warning: Detected recovery disk {recover_disk} does not match root disk {root_disk} specified in fstab")
-    raise RuntimeError("Recovery disk does not match root disk in fstab, cannot validate fstab/system sanity, exiting...")
+    print(f"Notice: Detected recovery disk {recover_disk} does not match root disk {root_disk} specified in fstab")
+    print("Determining actual root filesystem device to validate...")
+    actual_root_dev = find_actual_root_device()
+    if actual_root_dev is None:
+      raise RuntimeError("Cannot determine actual root device from /proc/mounts, cannot validate fstab/system sanity, exiting...")
+    actual_root_disks = physical_disks_for_device(actual_root_dev)
+    print(f"Actual root filesystem device: {actual_root_dev} (physical disks: {actual_root_disks})")
+    if actual_root_disks != root_disk:
+      print(f"Error: Actual root device physical disks {actual_root_disks} do not match root disk {root_disk} from fstab")
+      raise RuntimeError("Actual root device does not match root disk in fstab, cannot validate fstab/system sanity, exiting...")
+    print("Actual root device matches fstab root disk, proceeding...")
 
 # check if the root_disk is exactly one item, otherwise we'd have a spanned disk.  This may never happen as a spanned / volume
 #   should not mount and/or activate in the ALAR scenario, but here for completeness.
@@ -198,10 +213,7 @@ with open("/etc/fstab", "r") as f:
       else:
         new_lines.append(line)
 
-pprint("Proposed new fstab content:")
-pprint(new_lines)
-
 # write out the new fstab
-with open("/tmp/fstab", "w") as f:
+with open("/etc/fstab", "w") as f:
   for l in new_lines:
     f.write(l + "\n")

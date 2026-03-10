@@ -6,13 +6,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.4.0 (2026-03-10)
+Rewrote 'fstab' action in python3
+  - more flexible handling of LVM and 'spec' field options
+Added helpers.py to go with new fstab
+
 ## 1.3.3 (2025-12-15)
 Enhanced 'sudo' action to include more checks
   - rev sudo-impl.sh to 1.1.0
     - add sudo setuid check
-    - add /etc check 
+    - add /etc check
 Updated helpers.sh
-  - rev helpers.sh to 1.2.0 
+  - rev helpers.sh to 1.2.0
     - adding OS detection, first used in sudo-impl.sh
     - refactor the check functions into a check and fix functions so perms/owners can check w/o fixing
 
@@ -21,12 +26,12 @@ Updated helpers.sh
   - Add 'partx' support as replacement for sgdisk on RHEL 10
 
 ## 1.3.1 (2025-12-08)
-Support for Telemetry is added. Just basic information get tracked: 
+Support for Telemetry is added. Just basic information get tracked:
  - Repair and Recovery VM distro name and version
  - action name
  - architecture
  - What initiator (CLI, RecoverVM, SelfHelp)
- - Any error logged 
+ - Any error logged
 These information assist to improve existing actions and the base framework.
 
 - Added support for the NVME controller type
@@ -54,7 +59,7 @@ No new added functionality. Only minor changes added or where necessary bugs got
 
 ### Changed
 ALAR version 0.9.0 represents a redesign of ALAR which was coming into age and not flexible enough to cope with different distros and their disk layouts.
-The new version is distro agnostic. Which means we don't rely on any predictions what the disk layout may look like. With the new design ALAR should be able to cope 
+The new version is distro agnostic. Which means we don't rely on any predictions what the disk layout may look like. With the new design ALAR should be able to cope
 with any kind of disk layout. The main focus for the redesign of ALAR is to use ALAR standalone without the usage of the vm-repair extension. And allow to get the system being recovered from an existing VM.
 
 ### Added
@@ -62,6 +67,6 @@ with any kind of disk layout. The main focus for the redesign of ALAR is to use 
   Otherwise the password can be passed over via the new option '--ade-password'
 - Instead of the default disk (LUN 0) to get recovered by ALAR a different disk can be used instead.
   Use the new option '--custom-recover-disk'
-- The action scripts are part of the binary build. It is not required to get the downloaded 
+- The action scripts are part of the binary build. It is not required to get the downloaded
   from the GIT repository. This may be of help for those conditions where access to the Internet isn't permitted. But if required it is possible to download them with the help of the new option '--download-action-scripts'. This may be handy if there is a new bug fix available in the repo but no new build got generated.
 - Logging functionality added. Use RUST_LOG = debug|error|info
