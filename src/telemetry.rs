@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use crate::cli;
 use crate::distro;
-use crate::global;
 use crate::helper;
 use chrono::Utc;
 use log::debug;
@@ -148,7 +147,7 @@ pub(crate) fn create_exception_envelope(
     ExceptionEnvelope {
         name: "Microsoft.ApplicationInsights.Exception".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        iKey: global::get_ikey(),
+        iKey: get_ikey(),
         tags: HashMap::from([
             ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
             (
@@ -226,7 +225,7 @@ pub(crate) fn create_trace_envelope(
     TraceEnvelope {
         name: "Microsoft.ApplicationInsights.Message".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        iKey: global::get_ikey(),
+        iKey: get_ikey(),
         tags: HashMap::from([
             ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
             (
@@ -246,8 +245,36 @@ pub(crate) fn create_trace_envelope(
     }
 }
 
+
+const KEY_LOCATION : &str = "InstrumentationKey=55bf482d-b738-45e9-a5e3-4aea6fc5f7d1;IngestionEndpoint=https://northeurope-2.in.applicationinsights.azure.com";
+pub(crate) fn get_endpoint() -> String {
+    KEY_LOCATION.split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            if part.to_ascii_lowercase().starts_with("ingestionendpoint=") {
+                Some(format!("{}/v2/track", part["ingestionendpoint=".len()..].trim().trim_matches('"')))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| String::from("https://dc.services.visualstudio.com/v2/track")).to_string()
+}   
+
+pub(crate) fn get_ikey() -> String {
+    KEY_LOCATION.split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            if part.to_ascii_lowercase().starts_with("instrumentationkey=") {
+                Some(part["instrumentationkey=".len()..].trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "".to_string())
+}
+
 pub(crate) fn send_envelope<T: Serialize>(envelope: &T) -> anyhow::Result<()> {
-    let endpoint = global::get_endpoint();
+    let endpoint = get_endpoint();
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

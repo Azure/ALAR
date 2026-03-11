@@ -3,7 +3,6 @@ mod ade;
 mod cli;
 mod constants;
 mod distro;
-mod global;
 mod helper;
 mod mount;
 mod prepare_chroot;

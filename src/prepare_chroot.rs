@@ -148,41 +148,28 @@ pub fn set_environment(
     debug!("Distro name: {distroname}");
     debug!("Distro version: {distroversion}");
 
+    fn set_script_vars(distro_type: &str, dkind: &distro::DistroKind) {
+        debug!("Type {} detected", dkind.distro_type);
+        env::set_var(distro_type, convert_bool(true));
+        debug!("Subtype: {}", dkind.distro_subtype);
+        env::set_var("DISTROSUBTYPE", format!("{}", dkind.distro_subtype));
+    }
+
     match distrokind {
         dkind if dkind.distro_type == distro::DistroType::RedHat => {
-            debug!("Type {} detected", dkind.distro_type);
-            env::set_var("isRedHat", convert_bool(true));
-            let distrosubtype = dkind.distro_subtype;
-            debug!("Subtype: {distrosubtype}");
-            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+            set_script_vars("isRedHat", &dkind);
         }
         dkind if dkind.distro_type == distro::DistroType::Ubuntu => {
-            debug!("Type {} detected", dkind.distro_type);
-            env::set_var("isUbuntu", convert_bool(true));
-            let distrosubtype = dkind.distro_subtype;
-            debug!("Subtype: {distrosubtype}");
-            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+            set_script_vars("isUbuntu", &dkind);
         }
         dkind if dkind.distro_type == distro::DistroType::Suse => {
-            debug!("Type {} detected", dkind.distro_type);
-            env::set_var("isSuse", convert_bool(true));
-            let distrosubtype = dkind.distro_subtype;
-            debug!("Subtype: {distrosubtype}");
-            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+            set_script_vars("isSuse", &dkind);
         }
         dkind if dkind.distro_type == distro::DistroType::AzureLinux => {
-            debug!("Type {} detected", dkind.distro_type);
-            env::set_var("isAzureLinux", convert_bool(true));
-            let distrosubtype = dkind.distro_subtype;
-            debug!("Subtype: {distrosubtype}");
-            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+            set_script_vars("isAzureLinux", &dkind);
         }
         dkind if dkind.distro_type == distro::DistroType::Debian => {
-            debug!("Type {} detected", dkind.distro_type);
-            env::set_var("isDebian", convert_bool(true));
-            let distrosubtype = dkind.distro_subtype;
-            debug!("Subtype: {distrosubtype}");
-            env::set_var("DISTROSUBTYPE", format!("{}", distrosubtype));
+            set_script_vars("isDebian", &dkind);
         }
         _ => {
             env::set_var("DISTROTYPE", "UNKNOWN");
@@ -226,14 +213,22 @@ fn mount_required_partitions<'a>(
         } else {
             match helper::is_nvme_controller() {
                 Ok(_is_nvme @ true) => {
-                        debug!("Detected NVMe controller for recovery disk.");
-                        format!( "{}p{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
-                    }
-               Ok(_is_nvme @ false) => {
-                        debug!("Detected SCSI controller for recovery disk.");
-                        format!( "{}{}", helper::get_recovery_disk_path(cli), partitions.get("os").unwrap().number)
-                    }
-                
+                    debug!("Detected NVMe controller for recovery disk.");
+                    format!(
+                        "{}p{}",
+                        helper::get_recovery_disk_path(cli),
+                        partitions.get("os").unwrap().number
+                    )
+                }
+                Ok(_is_nvme @ false) => {
+                    debug!("Detected SCSI controller for recovery disk.");
+                    format!(
+                        "{}{}",
+                        helper::get_recovery_disk_path(cli),
+                        partitions.get("os").unwrap().number
+                    )
+                }
+
                 Err(e) => {
                     error!("Error detecting NVMe controller: {e}");
                     process::exit(1);
@@ -300,13 +295,15 @@ fn mount_required_partitions<'a>(
                 ) {
                     Ok(()) => {}
                     Err(e) => {
-                        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                        telemetry::send_envelope(&telemetry::create_exception_envelope(
+                            telemetry::SeverityLevel::Error,
                             "ALAR EXCEPTION",
-                             &format!("Unable to mount the logical volume : {}", lv.name),
-                             "prepare_chroot() -> mount() raised an error",
-                             cli,
-                             distro,
-                        )).ok();
+                            &format!("Unable to mount the logical volume : {}", lv.name),
+                            "prepare_chroot() -> mount() raised an error",
+                            cli,
+                            distro,
+                        ))
+                        .ok();
                         panic!(
                             "Unable to mount the logical volume : {} Error is: {}",
                             lv.name, e
@@ -401,3 +398,4 @@ fn mkdir_support_filesystems() -> Result<()> {
     }
     Ok(())
 }
+
