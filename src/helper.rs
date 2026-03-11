@@ -276,10 +276,10 @@ fn write_builtin_action_scripts() -> Result<()> {
     .context("Writing efifix-impl.sh failed")?;
 
     fs::write(
-        format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.sh"),
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "fstab-impl.py"),
         constants::FSTAB_IMPL_FILE,
     )
-    .context("Writing fstab-impl.sh failed")?;
+    .context("Writing fstab-impl.py failed")?;
 
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "grub.awk"),
@@ -298,6 +298,12 @@ fn write_builtin_action_scripts() -> Result<()> {
         constants::HELPERS_SH_FILE,
     )
     .context("Writing helpers.sh failed")?;
+
+    fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "helpers.py"),
+        constants::HELPERS_PY_FILE,
+    )
+    .context("Writing helpers.py failed")?;
 
     fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "initrd-impl.sh"),
