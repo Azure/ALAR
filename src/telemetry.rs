@@ -246,7 +246,7 @@ pub(crate) fn create_trace_envelope(
 }
 
 
-const KEY_LOCATION : &str = "InstrumentationKey=55bf482d-b738-45e9-a5e3-4aea6fc5f7d1;IngestionEndpoint=https://northeurope-2.in.applicationinsights.azure.com";
+const KEY_LOCATION : &str = "InstrumentationKey=67ca72ac-0de7-4f4d-b66a-e8af80638c00;IngestionEndpoint=https://polandcentral-0.in.applicationinsights.azure.com/;LiveEndpoint=https://polandcentral.livediagnostics.monitor.azure.com/;ApplicationId=ff9a02a2-91f0-4e98-96a5-06dfb4621f40";
 pub(crate) fn get_endpoint() -> String {
     KEY_LOCATION.split(';')
         .find_map(|part| {
