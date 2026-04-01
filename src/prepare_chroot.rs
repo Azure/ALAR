@@ -8,11 +8,9 @@ use crate::mount;
 use crate::telemetry;
 use anyhow::Result;
 use log::debug;
-use log::error;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::process;
 
 pub(crate) fn prepare_chroot(distro: &distro::Distro, cli: &cli::CliInfo) -> Result<()> {
     let mut partition_details: HashMap<&str, &PartInfo> = HashMap::new();
@@ -81,16 +79,6 @@ fn get_distro_kind(distro: &distro::Distro) -> distro::DistroKind {
     }
 }
 
-// A helper function to get the corrected recovery disk path
-// depending if we have an NVMe controller or not
-fn get_corrected_recover_path(cli_info: &cli::CliInfo) -> String {
-    if helper::is_nvme_controller().unwrap_or(false) {
-        format!("{}p", helper::get_recovery_disk_path(cli_info))
-    } else {
-        helper::get_recovery_disk_path(cli_info)
-    }
-}
-
 pub fn set_environment(
     distro: &distro::Distro,
     cli_info: &cli::CliInfo,
@@ -101,58 +89,63 @@ pub fn set_environment(
     let distrokind = get_distro_kind(distro);
     debug!("Distro kind: {:?}", distrokind);
 
-    // some default values which can be always of help
-    env::set_var("DISTRONAME", format!("'{}'", distroname.as_str()));
-    env::set_var("DISTROVERSION", distroversion.as_str());
-    env::set_var("isLVM", convert_bool(distro.is_lvm));
-    env::set_var(
-        "RECOVER_DISK_PATH",
-        helper::get_recovery_disk_path(cli_info),
-    );
-    env::set_var(
-        "OS_PARTITION",
-        partitions.get("os").unwrap().number.to_string(),
-    );
-    if partitions.contains_key("boot") {
+    unsafe {
+        // some default values which can be always of help
+        env::set_var("DISTRONAME", format!("'{}'", distroname.as_str()));
+        env::set_var("DISTROVERSION", distroversion.as_str());
+        env::set_var("isLVM", convert_bool(distro.is_lvm));
         env::set_var(
-            "BOOT_PARTITION",
-            partitions.get("boot").unwrap().number.to_string(),
+            "RECOVER_DISK_PATH",
+            helper::get_recovery_disk_path(cli_info),
         );
         env::set_var(
-            "boot_part_path",
-            format!(
-                "{}{}",
-                get_corrected_recover_path(cli_info),
-                partitions.get("boot").unwrap().number
-            ),
+            "OS_PARTITION",
+            partitions.get("os").unwrap().number.to_string(),
         );
-    }
-    if partitions.contains_key("efi") {
-        env::set_var(
-            "EFI_PARTITION",
-            partitions.get("efi").unwrap().number.to_string(),
-        );
-        env::set_var(
-            "efi_part_path",
-            format!(
-                "{}{}",
-                get_corrected_recover_path(cli_info),
-                partitions.get("efi").unwrap().number
-            ),
-        );
-    }
+        if partitions.contains_key("boot") {
+            env::set_var(
+                "BOOT_PARTITION",
+                partitions.get("boot").unwrap().number.to_string(),
+            );
+            env::set_var(
+                "boot_part_path",
+                format!(
+                    "{}{}",
+                    helper::get_recovery_disk_path(cli_info),
+                    partitions.get("boot").unwrap().number
+                ),
+            );
+        }
+        if partitions.contains_key("efi") {
+            env::set_var(
+                "EFI_PARTITION",
+                partitions.get("efi").unwrap().number.to_string(),
+            );
+            env::set_var(
+                "efi_part_path",
+                format!(
+                    "{}{}",
+                    helper::get_recovery_disk_path(cli_info),
+                    partitions.get("efi").unwrap().number
+                ),
+            );
+        }
 
-    // Remove this variable because of security reasons
-    env::remove_var("SUDO_COMMAND");
-
+        // Remove this variable because of security reasons
+        env::remove_var("SUDO_COMMAND");
+    }
     debug!("Distro name: {distroname}");
     debug!("Distro version: {distroversion}");
 
     fn set_script_vars(distro_type: &str, dkind: &distro::DistroKind) {
         debug!("Type {} detected", dkind.distro_type);
-        env::set_var(distro_type, convert_bool(true));
+        unsafe {
+            env::set_var(distro_type, convert_bool(true));
+        }
         debug!("Subtype: {}", dkind.distro_subtype);
-        env::set_var("DISTROSUBTYPE", format!("{}", dkind.distro_subtype));
+        unsafe {
+            env::set_var("DISTROSUBTYPE", format!("{}", dkind.distro_subtype));
+        }
     }
 
     match distrokind {
@@ -171,10 +164,10 @@ pub fn set_environment(
         dkind if dkind.distro_type == distro::DistroType::Debian => {
             set_script_vars("isDebian", &dkind);
         }
-        _ => {
+        _ => unsafe {
             env::set_var("DISTROTYPE", "UNKNOWN");
             env::set_var("DISTROSUBTYPE", "UNKNOWN");
-        }
+        },
     }
 }
 
@@ -211,29 +204,11 @@ fn mount_required_partitions<'a>(
         if distro.is_ade {
             constants::ADE_OSENCRYPT_PATH.to_string()
         } else {
-            match helper::is_nvme_controller() {
-                Ok(_is_nvme @ true) => {
-                    debug!("Detected NVMe controller for recovery disk.");
-                    format!(
-                        "{}p{}",
-                        helper::get_recovery_disk_path(cli),
-                        partitions.get("os").unwrap().number
-                    )
-                }
-                Ok(_is_nvme @ false) => {
-                    debug!("Detected SCSI controller for recovery disk.");
-                    format!(
-                        "{}{}",
-                        helper::get_recovery_disk_path(cli),
-                        partitions.get("os").unwrap().number
-                    )
-                }
-
-                Err(e) => {
-                    error!("Error detecting NVMe controller: {e}");
-                    process::exit(1);
-                }
-            }
+            format!(
+                "{}{}",
+                helper::get_recovery_disk_path(cli),
+                partitions.get("os").unwrap().number
+            )
         }
     };
 
@@ -267,16 +242,17 @@ fn mount_required_partitions<'a>(
                     Ok(()) => {}
                     Err(e) => {
                         let _ = helper::cleanup(distro, cli);
-                        panic!(
+                        eprintln!(
                             "Unable to mount the logical volume : {} Error is: {}",
                             root_lv.name, e
                         );
+                        std::process::exit(1);
                     }
                 }
             });
         lv_set
             .iter()
-            .filter(|volume| volume.name != "rootvg-rootlv" && volume.name != "rootvg-tmplv")
+            .filter(|volume| volume.name == "rootvg-usrlv" || volume.name == "rootvg-varlv" || volume.name == "rootvg-tmplv")
             .for_each(|lv| {
                 let options = if lv.fstype == "xfs" { "nouuid" } else { "" };
                 match mount::mount(
@@ -304,10 +280,11 @@ fn mount_required_partitions<'a>(
                             distro,
                         ))
                         .ok();
-                        panic!(
+                        eprintln!(
                             "Unable to mount the logical volume : {} Error is: {}",
                             lv.name, e
                         );
+                        std::process::exit(1);
                     }
                 }
             });
@@ -336,13 +313,6 @@ fn mount_required_partitions<'a>(
     // Even if we have an ADE encrpted disk the boot partition and the efi partition are not encrypted
     let rescue_disk_path = helper::get_recovery_disk_path(cli);
 
-    //If we have a NVME controller, we need to add 'p' before the partition number
-    let rescue_disk_path = if helper::is_nvme_controller().unwrap_or(false) {
-        format!("{}p", rescue_disk_path)
-    } else {
-        rescue_disk_path
-    };
-
     // The order is again important. First /boot then /boot/efi
     // Verify also if we have a boot partition, Ubuntu doesn't have one for example
     if partitions.get("boot").is_some() {
@@ -367,15 +337,15 @@ fn mount_required_partitions<'a>(
     }
 
     // Also be carefull with the efi partition, not all distros have one
-    if partitions.get("efi").is_some() {
-        if let Some(efi_partition) = partitions.get("efi") {
-            mount::mount(
-                &format!("{}{}", rescue_disk_path, efi_partition.number),
-                constants::RESCUE_ROOT_BOOT_EFI,
-                "",
-                false,
-            )?;
-        }
+    if partitions.get("efi").is_some()
+        && let Some(efi_partition) = partitions.get("efi")
+    {
+        mount::mount(
+            &format!("{}{}", rescue_disk_path, efi_partition.number),
+            constants::RESCUE_ROOT_BOOT_EFI,
+            "",
+            false,
+        )?;
     }
 
     Ok(())
@@ -398,4 +368,3 @@ fn mkdir_support_filesystems() -> Result<()> {
     }
     Ok(())
 }
-

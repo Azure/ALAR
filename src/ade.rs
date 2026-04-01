@@ -116,9 +116,9 @@ fn mount_ade_manually(partitions: &[PartInfo], cli_info: &mut CliInfo) -> Result
 
 fn create_rescue_bek_dir() -> Result<()> {
     let command = format!("mkdir -p {}", constants::RESCUE_BEK);
-    helper::run_cmd(&command).map_err(|open_error| {
+
+    helper::run_cmd(&command).inspect_err(|open_error| {
         error!("Failed to create the BEK directory: {open_error}");
-        open_error
     })?;
 
     Ok(())
@@ -126,9 +126,8 @@ fn create_rescue_bek_dir() -> Result<()> {
 
 fn create_rescue_bek_boot() -> Result<()> {
     let command = format!("mkdir -p {}", constants::RESCUE_BEK_BOOT);
-    helper::run_cmd(&command).map_err(|open_error| {
+    helper::run_cmd(&command).inspect_err(|open_error| {
         error!("Failed to create the BEK boot directory: {open_error}");
-        open_error
     })?;
 
     Ok(())
@@ -306,17 +305,15 @@ pub(crate) fn ade_importvg() -> Result<()> {
             constants::ADE_OSENCRYPT_PATH
         );
 
-        helper::run_cmd(&vgimportclone).map_err(|open_error| {
+        helper::run_cmd(&vgimportclone).inspect_err(|open_error| {
             error!("Failed to import the VG: {open_error}");
-            open_error
         })?;
 
         ade_rename_rootvg()?;
     } else {
         let command = "vgchange -ay rootvg;vgscan --mknodes";
-        helper::run_cmd(command).map_err(|open_error| {
+        helper::run_cmd(command).inspect_err(|open_error| {
             error!("Failed to activate the rootvg VG : {open_error}");
-            open_error
         })?;
     };
 
@@ -326,9 +323,8 @@ pub(crate) fn ade_importvg() -> Result<()> {
 pub(crate) fn ade_rename_rootvg() -> Result<()> {
     debug!("Renaming the rootvg to oldvg and the rescuevg to rootvg");
     let command = "vgrename rootvg oldvg; vgrename rescuevg rootvg";
-    helper::run_cmd(command).map_err(|open_error| {
+    helper::run_cmd(command).inspect_err(|open_error| {
         error!("Failed to rename the ADE VG: {open_error}");
-        open_error
     })?;
 
     Ok(())
@@ -341,9 +337,8 @@ pub(crate) fn ade_lvm_cleanup() -> Result<()> {
         "vgchange -an rootvg; cryptsetup close rescueencrypt"
     };
 
-    helper::run_cmd(command).map_err(|open_error| {
+    helper::run_cmd(command).inspect_err(|open_error| {
         error!("Failed to cleanup the ADE VG: {open_error}");
-        open_error
     })?;
 
     Ok(())
@@ -358,9 +353,8 @@ pub(crate) fn close_rescueencrypt() -> Result<()> {
 
     //mount::umount(constants::RESCUE_ROOT, true)?;
     let command = "cryptsetup close rescueencrypt";
-    helper::run_cmd(command).map_err(|open_error| {
+    helper::run_cmd(command).inspect_err(|open_error| {
         error!("Failed to close rescueencrypt: {open_error}");
-        open_error
     })?;
 
     Ok(())

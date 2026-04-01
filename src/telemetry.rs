@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::cli;
 use crate::distro;
 use crate::helper;
@@ -9,6 +8,7 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::Serialize;
 use std::env;
 use std::time::Duration;
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 #[derive(Serialize, Debug)]
@@ -245,7 +245,7 @@ pub(crate) fn create_trace_envelope(
     }
 }
 
-
+// See the following doc about key information: https://learn.microsoft.com/en-us/azure/azure-monitor/app/connection-strings
 const KEY_LOCATION : &str = "InstrumentationKey=67ca72ac-0de7-4f4d-b66a-e8af80638c00;IngestionEndpoint=https://polandcentral-0.in.applicationinsights.azure.com/;LiveEndpoint=https://polandcentral.livediagnostics.monitor.azure.com/;ApplicationId=ff9a02a2-91f0-4e98-96a5-06dfb4621f40";
 pub(crate) fn get_endpoint() -> String {
     KEY_LOCATION.split(';')

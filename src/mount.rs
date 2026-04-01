@@ -14,17 +14,15 @@ use std::process::Stdio;
 use std::{fs, process};
 
 pub(crate) fn mkdir_assert() -> Result<()> {
-    fs::create_dir_all(constants::ASSERT_PATH).map_err(|open_error| {
+    fs::create_dir_all(constants::ASSERT_PATH).inspect_err(|open_error| {
         error!("Error while creating the assert directory: {open_error}");
-        open_error
     })?;
     Ok(())
 }
 
 pub(crate) fn mkdir_rescue_root() -> Result<()> {
-    fs::create_dir_all(constants::RESCUE_ROOT).map_err(|open_error| {
+    fs::create_dir_all(constants::RESCUE_ROOT).inspect_err(|open_error| {
         error!("Error while creating the rescue-root directory: {open_error}");
-        open_error
     })?;
     Ok(())
 }
@@ -32,16 +30,15 @@ pub(crate) fn mkdir_rescue_root() -> Result<()> {
 pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: bool) -> Result<()> {
     // There is an issue on Ubuntu that the XFS filesystem is not enabled by default
     // We need to load the driver first
-    process::Command::new("modprobe").arg("xfs").status().map_err(|open_error | {
+    process::Command::new("modprobe").arg("xfs").status().inspect_err(|open_error| {
         error!("Loading of the module xfs was not possible. This may result in mount issues! : {open_error}");
-        telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Warning,
+        let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Warning,
             "ALAR WARNING",
              "Loading of the xfs module was not possible.",
              "mount() -> modprobe xfs raised an error",
              &CliInfo::default(),
              &distro::Distro::default(),
-        )).ok();
-        open_error
+        ));
     })?;
 
     let supported = match sys_mount::SupportedFilesystems::new() {
@@ -49,15 +46,14 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
         Err(open_error) => {
             error!("Failed to get supported file systems: Detail {open_error}");
             error!("This is a severe issue for ALAR. Aborting.");
-            telemetry::send_envelope(&telemetry::create_exception_envelope(
+            let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                 telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
                 "Failed to get supported file systems.",
                 "mount() -> sys_mount::SupportedFilesystems::new() raised an error",
                 &CliInfo::default(),
                 &distro::Distro::default(),
-            ))
-            .ok();
+            ));
             process::exit(1);
         }
     };
@@ -67,22 +63,20 @@ pub(crate) fn mount(source: &str, destination: &str, option: &str, is_relaxed: b
         .flags(sys_mount::MountFlags::empty())
         .data(option)
         .mount(source, destination)
-        .map_err(|mount_error| {
+        .inspect_err(|mount_error| {
             error!("Failed to mount {source} on {destination}: {mount_error}");
             if !is_relaxed {
                 error!("This is a severe issue for ALAR. Aborting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                     &format!("Failed to mount {source} on {destination}."),
                     "mount() -> sys_mount::Mount::builder().mount() raised an error",
                     &CliInfo::default(),
                     &distro::Distro::default(),
-                ))
-                .ok();
+                ));
                 process::exit(1);
             }
-            mount_error
         })?;
 
     Ok(())
@@ -94,18 +88,16 @@ pub(crate) fn umount(destination: &str, recursive: bool) -> Result<()> {
             .arg("-R")
             .arg(destination)
             .status()
-            .map_err(|umount_error| {
+            .inspect_err(|umount_error| {
                 error!("Failed to unmount {destination}: {umount_error}");
                 error!("This could cause severe issues.");
-                umount_error
             })?;
         Ok(())
     } else {
-        sys_mount::unmount(destination, sys_mount::UnmountFlags::DETACH).map_err(
+        sys_mount::unmount(destination, sys_mount::UnmountFlags::DETACH).inspect_err(
             |umount_error| {
                 error!("Failed to unmount {destination}: {umount_error}");
                 error!("This shouldn't cause a severe issue for ALAR.");
-                umount_error
             },
         )?;
         Ok(())
@@ -220,7 +212,7 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
         Some(_code @ 1) if partition_filesystem == "xfs" => {
             error!("A general error occured while trying to recover the device {partition_path}.");
             error!("Stopping ALAR");
-            telemetry::send_envelope(&telemetry::create_exception_envelope(
+            let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                 telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
                 &format!(
@@ -229,23 +221,20 @@ pub(crate) fn fsck_partition(partition_path: &str) -> Result<()> {
                 "Inside fsck_partition() -> xfs_repair returned exit code 1",
                 &CliInfo::default(),
                 &distro::Distro::default(),
-            ))
-            .ok();
+            ));
             process::exit(1);
         }
         None => {
-            telemetry::send_envelope(&telemetry::create_exception_envelope(
+            let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                 telemetry::SeverityLevel::Error,
                 "ALAR EXCEPTION",
                 "fsck operation terminated by signal.",
                 "Inside fsck_partition() -> process::Command::status() returned None",
                 &CliInfo::default(),
                 &distro::Distro::default(),
-            ))
-            .ok();
-            panic!(
-                "fsck operation terminated by signal error. ALAR is not able to proceed further!"
-            );
+            ));
+            eprintln!( "fsck operation terminated by signal error. ALAR is not able to proceed further!");
+            process::exit(1);
         }
 
         // Any other error state is not of interest for us
@@ -269,7 +258,7 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
        We need to restore the old mounts later
     */
     let command = "lsblk -ln -o NAME,MOUNTPOINT | grep -e boot | sed -r 's/[[:space:]]+/:/'";
-    let old_mount_lines =helper::run_fun(command)?;
+    let old_mount_lines = helper::run_fun(command)?;
     let mut items: HashMap<&str, &str> = HashMap::new();
 
     debug!("importvg :: Old mounts: {}", old_mount_lines);
@@ -312,28 +301,11 @@ pub(crate) fn importvg(cli_info: &crate::cli::CliInfo, partition_number: i32) ->
         } else {
             debug!("The rootvg is in use. We need to rename the rootvg to oldvg and the rescuevg to rootvg");
 
-            match helper::is_nvme_controller() {
-                Ok(_is_nvme @ true) => {
-                    debug!("Detected NVMe controller for recovery disk.");
-                    helper::run_cmd(&format!(
-                        "vgimportclone -n rescuevg {}p{}; vgscan --mknodes",
-                        helper::get_recovery_disk_path(cli_info),
-                        partition_number
-                    ))?;
-                }
-                Ok(_is_nvme @ false) => {
-                    debug!("Detected SCSI controller for recovery disk.");
-                    helper::run_cmd(&format!(
-                        "vgimportclone -n rescuevg {}{}; vgscan --mknodes",
-                        helper::get_recovery_disk_path(cli_info),
-                        partition_number
-                    ))?;
-                }
-                Err(e) => {
-                    error!("Error while detecting the controller type: {e}");
-                    process::exit(1);
-                }
-            };
+            helper::run_cmd(&format!(
+                "vgimportclone -n rescuevg {}{}; vgscan --mknodes",
+                helper::get_recovery_disk_path(cli_info),
+                partition_number
+            ))?;
 
             helper::run_cmd("vgrename rootvg oldvg; vgrename rescuevg rootvg; vgchange -ay")?;
 
@@ -454,14 +426,14 @@ pub(crate) fn rescan_host() -> Result<()> {
 
 // This function does support only scsi backed devices
 pub(crate) fn disable_broken_disk(cli_info: &CliInfo) -> Result<()> {
+    // If we have an NVMe controller we skip the next steps as they are not applicable
+    if helper::is_nvme_controller_present().unwrap_or(false) {
+        return Ok(());
+    }
+    
     debug!("Inside disable_broken_disk");
     let recover_disk = helper::get_recovery_disk_path(cli_info).replace("/dev/", "");
     helper::run_cmd("vgchange -an rootvg")?;
-
-    // If we have an NVMe controller we skip the next steps as they are not applicable
-    if helper::is_nvme_controller().unwrap_or(false) {
-        return Ok(());
-    }
 
     fs::write(format!("/sys/block/{}/device/delete", recover_disk), b"1")?;
     Ok(())

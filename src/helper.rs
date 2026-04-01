@@ -16,6 +16,24 @@ use std::{
     time::Duration,
 };
 
+enum DiskType {
+    Nvme,
+    Scsi,
+    Nbd,
+}
+
+fn what_disk_type(path: &str) -> Result<DiskType> {
+    if path.contains("/dev/nvme") {
+        Ok(DiskType::Nvme)
+    } else if path.contains("/dev/sd") {
+        Ok(DiskType::Scsi)
+    } else if path.contains("/dev/nbd") {
+        Ok(DiskType::Nbd)
+    } else {
+        Err(anyhow!("Unknown disk type for path: {}", path))
+    }
+}
+
 // There are issue with readlink or readpath. Somehow the pathes can't be resolved correctly
 // The following functions are a workaround to get the correct path and to determine the partition numbers
 // based on those details we can get from the partition path.
@@ -38,7 +56,7 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
         error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
         error!("Error detail: {}", e);
 
-        match telemetry::send_envelope(&telemetry::create_exception_envelope(
+        let _ =telemetry::send_envelope(&telemetry::create_exception_envelope(
             telemetry::SeverityLevel::Error,
             "ALAR EXCEPTION",
             "Error getting recovery disk partition information.",
@@ -48,13 +66,12 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             ),
             cli_info,
             &Distro::default(),
-        )) {
-            Ok(_) => {}
-            Err(e) => debug!("Failed to send telemetry data: {}", e),
-        }
+        )).inspect_err(|e| error!("Failed to send telemetry: {}", e));
+        
     };
 
     if !cli_info.custom_recover_disk.is_empty() {
+        // For a NBD device this part is used as well. No special handling required as with NVME devices.
         match realpath(&cli_info.custom_recover_disk) {
             Ok(path) => {
                 debug!(
@@ -69,7 +86,7 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             }
         }
     } else {
-        match is_nvme_controller() {
+        match is_nvme_controller_present() {
             Ok(is_nvme) => {
                 if is_nvme {
                     path_info = match nvme::get_recovery_nvme_disk_path() {
@@ -97,6 +114,11 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             }
         }
     };
+    // add the suffix 'p' to the path if it's a nvme or NBD disk, otherwise the partition number will be wrong later on
+    match what_disk_type(&path_info) {
+        Ok(DiskType::Nvme) | Ok(DiskType::Nbd) => path_info.push('p'),
+        _ => {}
+    }
     path_info
 }
 
@@ -214,15 +236,14 @@ pub(crate) fn download_action_scripts_or(cli_info: &cli::CliInfo) -> Result<()> 
 
 fn download_action_scripts() -> Result<()> {
     // At first clean
-    if Path::new(constants::ACTION_IMPL_DIR).exists() {
-        if let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
+    if Path::new(constants::ACTION_IMPL_DIR).exists() && let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
             println!(
                 "Directory {} can not be removed : '{}'",
                 constants::ACTION_IMPL_DIR,
                 err
             );
-        }
     }
+
     debug!("Downloading the action scripts from the remote repository");
     let command = format!("curl -o /tmp/alar2.tar.gz -L {}", constants::TARBALL);
     run_cmd(&command).context("Archive alar2.tar.gz not downloaded")?;
@@ -379,7 +400,7 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
     ))
 }
 
-pub(crate) fn is_nvme_controller() -> Result<bool> {
+pub(crate) fn is_nvme_controller_present() -> Result<bool> {
     if Path::new("/sys/class/nvme")
         .try_exists()
         .context("Veryfing /sys/class/nvme throw an error")?

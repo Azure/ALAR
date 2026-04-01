@@ -159,6 +159,14 @@ impl Distro {
                 "Logical Volume Manager 0x8E00",
             ),
         ]);
+        
+        // Need to remove the partition suffix for NVMe or NBD disks as the partition type detection commands expect the disk path without the suffix
+         let disk_path = if let Some(suffix_stripped) = disk_path.strip_suffix('p') {
+            debug!("Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands.");
+            suffix_stripped
+         } else {
+            disk_path
+        };
 
         match Path::new("/usr/sbin/sgdisk").try_exists() {
             Ok(_is_present @ true) => {
@@ -194,7 +202,8 @@ impl Distro {
                             let fields: Vec<String> = Self::split_fields(line); 
                             let partition_number = fields[0].to_string();
                             let partition_type = fields[1].to_string();
-                            partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
+                            // partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
+                             partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
                         }
                         debug!(
                             "Partition numbers and types collected via partx: {:#?}",
@@ -258,6 +267,14 @@ impl Distro {
     }
 
     pub(crate) fn get_partition_filesystem(partition_path: &str) -> Result<String> {
+        // Need to remove the partition suffix for NVMe or NBD disks as the partition type detection commands expect the disk path without the suffix
+         let partition_path = if let Some(suffix_stripped) = partition_path.strip_suffix('p') {
+            debug!("Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands.");
+            suffix_stripped
+         } else {
+            partition_path
+        };
+
         let command = format!("file -sL {}", partition_path);
         let command_output_string = helper::run_fun(&command)?.to_lowercase();
 
@@ -283,27 +300,21 @@ impl Distro {
             let number = partition_number.to_string().parse::<i32>().unwrap();
             let part_type = partition_type.to_string();
 
-            let partition_path = if helper::is_nvme_controller().unwrap_or(false) {
-                format!("{}p{}", helper::get_recovery_disk_path(cli_info), number)
-            } else {
-                format!("{}{}", helper::get_recovery_disk_path(cli_info), number)
-            };
-
+            let partition_path = format!("{}{}", helper::get_recovery_disk_path(cli_info), number);
             let mut partition_fstype = if let Ok(pfs) =
                 Self::get_partition_filesystem(&partition_path)
             {
                 pfs
             } else {
                 error!("Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                     "Not able to determine the partition filesystem.",
                     "Distro::get_partition_details() -> get_partition_filesystem() returned error",
                     cli_info,
                     &Distro::default(),
-                ))
-                .ok();
+                ));
                 process::exit(1);
             };
 
@@ -331,24 +342,18 @@ impl Distro {
         distro: &mut Distro,
     ) {
         let mut lv: Vec<LogicalVolume> = Vec::new();
-
+        // The command 'vgchange -ay' is required to make the logical volumes available which are residing on the partition. i
+        // Otherwise we won't be able to get details on those logical volumes.
+        let _ = helper::run_cmd("vgchange -ay");
 
         part.iter_mut()
             .filter(|lvm| lvm.part_type.contains("8E00"))
             .for_each(|part| {
-                let lvm_partition = if helper::is_nvme_controller().unwrap_or(false) {
-                    format!(
-                        "{}p{}",
-                        helper::get_recovery_disk_path(cli_info),
-                        part.number
-                    )
-                } else {
-                    format!(
-                        "{}{}",
-                        helper::get_recovery_disk_path(cli_info),
-                        part.number
-                    )
-                };
+                let lvm_partition = format!(
+                    "{}{}",
+                    helper::get_recovery_disk_path(cli_info),
+                    part.number
+                );
 
                 match mount::importvg(cli_info, part.number) {
                     Ok(_) => {}
@@ -423,14 +428,14 @@ impl Distro {
             if partition.part_type.contains("8E00") && partition.fstype == "LVM2_member" {
                 // Due to issues with RHEL above version 9.x we need to check whether the repair VM is allowed to use LVM based recovery disks
                 if !Self::is_repairvm_with_lvm_allowed() {
-                    telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                       "LVM based recovery disks are not supported on repair VMs with OS version >= 9.x.",
                         "Distro::is_repairvm_allowed_to_use_lvm() -> get_repair_os_version() returned >= 9.x",
                         cli_info,
                         distro,
-                )).ok();
+                ));
                     process::exit(1);
                 }
 
@@ -459,21 +464,7 @@ impl Distro {
                 }
             }
 
-            let mount_path = match helper::is_nvme_controller() {
-                Ok(_is_nvme @ true) => {
-                    debug!("Detected NVMe controller for recovery disk.");
-                    format!("{}p{}", &recovery_disk_path, partition.number)
-                }
-                Ok(_is_nvme @ false) => {
-                    debug!("Detected SCSI controller for recovery disk.");
-                    format!("{}{}", &recovery_disk_path, partition.number)
-                }
-
-                Err(e) => {
-                    error!("Error detecting NVMe controller: {e}");
-                    process::exit(1);
-                }
-            };
+            let mount_path = format!("{}{}", recovery_disk_path, partition.number);
 
             debug!(
                 "Mounting partition number {} to {}",
@@ -642,13 +633,13 @@ impl Distro {
         if let LogicalVolumesType::Some(lv) = volumes {
             if lv.is_empty() {
                 error!("No rootlv found in LVM. This is a not supported LVM setup. ALAR is not able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                      "No rootlv found in LVM.",
                      "Distro::read_distro_name_version_from_lv() -> LogicalVolumesType::Some returned empty vector",
                      cli_info,
                      &Distro::default(),
-                )).ok();
+                ));
                 process::exit(1);
             }
             // Find the rootlv and mount it
@@ -758,15 +749,14 @@ impl Distro {
         match ade::prepare_ade_environment(cli_info, partition_details).is_err() {
             true => {
                 error!("Error preparing ADE environment. ALAR is not able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                    "Error preparing ADE environment.",
+                    "Error preparing ADE environment. Probably the ADE key secret isn't correct.",
                     "Distro::enable_ade() -> ade::prepare_ade_environment() returned error",
                     cli_info,
                     distro,
-                ))
-                .ok();
+                ));
                 process::exit(1);
             }
             false => {
@@ -891,15 +881,14 @@ impl Distro {
                 error!("Please make sure the disk isn't a Data-disk.");
                 error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
                 error!("ALAR isn't able to proceed. Exiting.");
-                telemetry::send_envelope(&telemetry::create_exception_envelope(
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                     "No OS partition found during distro detection.",
                     "Distro::new() -> what_distro_name_version() returned None",
                     cli_info,
                     &distro,
-                ))
-                .ok();
+                ));
                 process::exit(1);
             }
         };
