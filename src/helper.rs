@@ -5,7 +5,7 @@ use crate::{
     distro::{Distro, LogicalVolumesType},
     mount, nvme, telemetry,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -53,10 +53,12 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
     #[allow(unused_assignments)]
     let mut path_info = String::new();
     let error_condition = |e| {
-        error!("Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting.");
+        error!(
+            "Error getting recover disk info. Something went wrong. ALAR is not able to proceed. Exiting."
+        );
         error!("Error detail: {}", e);
 
-        let _ =telemetry::send_envelope(&telemetry::create_exception_envelope(
+        let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
             telemetry::SeverityLevel::Error,
             "ALAR EXCEPTION",
             "Error getting recovery disk partition information.",
@@ -66,8 +68,8 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             ),
             cli_info,
             &Distro::default(),
-        )).inspect_err(|e| error!("Failed to send telemetry: {}", e));
-        
+        ))
+        .inspect_err(|e| error!("Failed to send telemetry: {}", e));
     };
 
     if !cli_info.custom_recover_disk.is_empty() {
@@ -236,12 +238,14 @@ pub(crate) fn download_action_scripts_or(cli_info: &cli::CliInfo) -> Result<()> 
 
 fn download_action_scripts() -> Result<()> {
     // At first clean
-    if Path::new(constants::ACTION_IMPL_DIR).exists() && let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR) {
-            println!(
-                "Directory {} can not be removed : '{}'",
-                constants::ACTION_IMPL_DIR,
-                err
-            );
+    if Path::new(constants::ACTION_IMPL_DIR).exists()
+        && let Err(err) = fs::remove_dir_all(constants::ACTION_IMPL_DIR)
+    {
+        println!(
+            "Directory {} can not be removed : '{}'",
+            constants::ACTION_IMPL_DIR,
+            err
+        );
     }
 
     debug!("Downloading the action scripts from the remote repository");
@@ -368,7 +372,6 @@ fn write_builtin_action_scripts() -> Result<()> {
     )
     .context("Writing corrupt-impl.sh failed")?;
 
-
     Ok(())
 }
 
@@ -401,21 +404,27 @@ pub(crate) fn get_repair_os_version() -> Result<String> {
 }
 
 pub(crate) fn is_nvme_controller_present() -> Result<bool> {
-    if Path::new("/sys/class/nvme")
+    let does_exist: Result<bool> = Path::new("/sys/class/nvme")
         .try_exists()
-        .context("Veryfing /sys/class/nvme throw an error")?
-    {
-        // Need a double check as on Ubuntu the nvme directory is present even if no nvme controller is available
-        if glob::glob("/sys/class/nvme/nvme*")
-            .context("Glob pattern matching failed")?
-            .count()
-            > 0
-        {
-            Ok(true)
-        } else {
-            Ok(false)
+        .context("Veryfing /sys/class/nvme throw an error");
+
+    match does_exist {
+        // If the path exists we need to check if there are any NVMe controllers present. Because on some systems the path exists but there are no NVMe controllers
+        Ok(_exist @ true) => {
+            if glob::glob("/sys/class/nvme/nvme*")
+                .context("Glob pattern matching failed")?
+                .count()
+                > 0
+            {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
         }
-    } else {
-        Ok(false)
+        Ok(_exist @ false) => Ok(false),
+        Err(e) => {
+            error!("Error while checking for NVMe controllers: {}", e);
+            Err(anyhow!("Error while checking for NVMe controllers: {}", e))
+        }
     }
 }

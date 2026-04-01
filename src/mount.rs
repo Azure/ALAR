@@ -2,6 +2,7 @@ use crate::cli::CliInfo;
 use crate::constants;
 use crate::distro;
 use crate::helper;
+use crate::helper::is_nvme_controller_present;
 use crate::telemetry;
 use anyhow::Result;
 use log::debug;
@@ -347,10 +348,15 @@ pub(crate) fn rename_oldvg() {
     // Only used for scsi disk. NVMe is currently not supported
     // It is run at the end of the recovery process to rename oldvg to rootvg
     // If it fails it is considered non fatal as the recovery process has finished anyway
+
+    if let Ok(true) = is_nvme_controller_present() {
+        return;
+    }
+
     debug!("Inside rename_oldvg");
 
     if helper::run_cmd("vgrename oldvg rootvg").is_err() {
-        error!("Failed to rename oldvg to rootvg");
+        error!("Failed to rename oldvg to rootvg. Can be ignored if the recovery VM is based on a non LVM disk or on a VG with a different name than rootvg.");
     }
 }
 
@@ -359,6 +365,11 @@ pub(crate) fn rescan_host() -> Result<()> {
     // Rescan can't be run on a NVMe it is not possible to select a distinct disk
     // It is verified at the start of the recover process whether the recover VM is basedon LVM or not
     //  If it is LVM based a LVM recover is no supported on a VG with the name rootvg, like we have on RedHat
+    
+    if is_nvme_controller_present()? {
+        return Ok(());
+    }
+
     debug!("Inside rescan_host");
 
     let old_mounts = helper::run_fun(
