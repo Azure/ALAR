@@ -881,10 +881,14 @@ impl Distro {
                 error!("Please make sure the disk isn't a Data-disk.");
                 error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
                 error!("ALAR isn't able to proceed. Exiting.");
+                let message_details = format!(
+                    "No OS partition found during distro detection. Partition details: {:#?}",
+                    &partition_details
+                );
                 let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                    "No OS partition found during distro detection.",
+                    &message_details,
                     "Distro::new() -> what_distro_name_version() returned None",
                     cli_info,
                     &distro,
