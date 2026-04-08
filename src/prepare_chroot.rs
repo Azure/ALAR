@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the terms found in the LICENSE file in the root of this source tree.
+
 use crate::cli;
 use crate::constants;
 use crate::distro;

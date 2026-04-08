@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+
+
 #
 # serialconsole-impl is responsible to set the configuration for the serialconsole
 # correct in case this is missing in a VM image.

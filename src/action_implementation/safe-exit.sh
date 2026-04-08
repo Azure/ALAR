@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+
 # A helper functions to prevent an accidently exit of the chroot environment
 # This script is used in together with the chroot-cli action
 function exit-chroot() {

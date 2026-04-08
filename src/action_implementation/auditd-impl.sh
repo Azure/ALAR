@@ -1,4 +1,8 @@
 #!/usr/bin/bash
+
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+
 # Load helper library
 IMPL_DIR=`dirname $0`
 . $IMPL_DIR/helpers.sh

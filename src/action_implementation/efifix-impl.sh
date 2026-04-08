@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+
 # In case the resolv.conf isn't set correct use the default resolver
 resolv-pre() {
     mv /etc/resolv.conf /etc/resolv.conf.org

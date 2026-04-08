@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the terms found in the LICENSE file in the root of this source tree.
+
 # The main intention is to roll back to the previous working kernel
 # We do this by altering the grub configuration
 # This is different for RedHat based distros and Ubuntu/SUSE distros
