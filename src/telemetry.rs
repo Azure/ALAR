@@ -277,6 +277,10 @@ pub(crate) fn get_ikey() -> String {
 }
 
 pub(crate) fn send_envelope<T: Serialize>(envelope: &T) -> anyhow::Result<()> {
+    if env::var("ALAR_TELEMETRY_DISABLED").is_ok() {
+        debug!("Telemetry is disabled via ALAR_TELEMETRY_DISABLED environment variable. Skipping sending telemetry.");
+        return Ok(());
+    }
     let endpoint = get_endpoint();
 
     let mut headers = HeaderMap::new();
