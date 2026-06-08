@@ -18,16 +18,23 @@ use std::{
     process::{self, Command},
     time::Duration,
 };
-
-enum DiskType {
+#[derive(Default)]
+pub(crate) enum DiskType {
     Nvme,
-    Scsi,
     Nbd,
+    #[default]
+    Scsi,
 }
 
-fn what_disk_type(path: &str) -> Result<DiskType> {
+pub(crate) fn what_disk_type(path: &str) -> Result<DiskType> {
     if path.contains("/dev/nvme") {
-        Ok(DiskType::Nvme)
+        // Do another verification in case we have a mixture of SCSI and NVMe controllers. In that
+        // case fall back type Scsi
+        if path.contains("/dev/sd") {
+            Ok(DiskType::Scsi)
+        } else {
+            Ok(DiskType::Nvme)
+        }
     } else if path.contains("/dev/sd") {
         Ok(DiskType::Scsi)
     } else if path.contains("/dev/nbd") {
@@ -86,7 +93,8 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
                 path_info = path;
             }
             Err(e) => {
-                error_condition(e);
+                let error = e.downcast_ref::<anyhow::Error>().unwrap_or(&e);
+                error_condition(error);
                 process::exit(1);
             }
         }
@@ -95,9 +103,10 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
             Ok(is_nvme) => {
                 if is_nvme {
                     path_info = match nvme::get_recovery_nvme_disk_path() {
-                        Ok(path) => path,
+                        Ok(path) => path.to_string(),
                         Err(e) => {
-                            error_condition(e);
+                            let error = e.downcast_ref::<anyhow::Error>().unwrap_or(e);
+                            error_condition(error);
                             process::exit(1);
                         }
                     };
@@ -107,18 +116,21 @@ pub(crate) fn get_recovery_disk_path(cli_info: &CliInfo) -> String {
                             path_info = path;
                         }
                         Err(e) => {
-                            error_condition(e);
+                            let error = e.downcast_ref::<anyhow::Error>().unwrap_or(&e);
+                            error_condition(error);
                             process::exit(1)
                         }
                     }
                 }
             }
             Err(e) => {
-                error_condition(e);
+                let error = e.downcast_ref::<anyhow::Error>().unwrap_or(&e);
+                error_condition(error);
                 process::exit(1);
             }
         }
     };
+
     // add the suffix 'p' to the path if it's a nvme or NBD disk, otherwise the partition number will be wrong later on
     match what_disk_type(&path_info) {
         Ok(DiskType::Nvme) | Ok(DiskType::Nbd) => path_info.push('p'),
@@ -288,6 +300,7 @@ fn load_local_action_scripts(directory_source: &str) -> Result<()> {
 // directory utilizing self devlopped action scripts.
 // Use the 'help' option what options are available.
 fn write_builtin_action_scripts() -> Result<()> {
+    debug!("Writing the builtin action scripts to the disk");
     fs::create_dir_all(constants::ACTION_IMPL_DIR)
         .context("Directory ACTION_IMPL_DIR can not be created")?;
 
@@ -415,11 +428,20 @@ pub(crate) fn is_nvme_controller_present() -> Result<bool> {
         // If the path exists we need to check if there are any NVMe controllers present. Because on some systems the path exists but there are no NVMe controllers
         Ok(_exist @ true) => {
             if glob::glob("/sys/class/nvme/nvme*")
-                .context("Glob pattern matching failed")?
+                .context("Glob pattern matching failed for nvme controller")?
                 .count()
                 > 0
             {
-                Ok(true)
+                // In case theres is a mixture of controllers (SCSI and NVMe) get sure this function does return false, which means we can fall back to SCSI type.
+                if glob::glob("/dev/sd*")
+                    .context("Glob pattern matching failed for scsi device")?
+                    .count()
+                    > 0
+                {
+                    Ok(false) // SCSI is present
+                } else {
+                    Ok(true) // NVMe is present
+                }
             } else {
                 Ok(false)
             }
