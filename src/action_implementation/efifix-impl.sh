@@ -3,84 +3,96 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the terms found in the LICENSE file in the root of this source tree.
 
+#include the common functions and variables
+source "${ACTION_DIR}/helpers.sh"
+
 # In case the resolv.conf isn't set correct use the default resolver
 resolv-pre() {
-    mv /etc/resolv.conf /etc/resolv.conf.org
-    echo "nameserver 168.63.129.16" >/etc/resolv.conf
+    cp /etc/resolv.conf /etc/resolv.conf.org
+    echo "nameserver 168.63.129.16" >> /etc/resolv.conf
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 }
 
 # restore the originail resolv.conf
 resolv-after() {
-    mv /etc/resolv.conf.org /etc/resolve.conf
+    mv /etc/resolv.conf.org /etc/resolv.conf
 }
 
 recover_redhat() {
     resolv-pre
 
-    efi_part_path=$(findmnt -n -o SOURCE /boot/efi)
-    if [[ -z ${efi_part_path}  ]]; then 
+    efi_part_path="$(findmnt -n -o SOURCE /boot/efi)"
+    if [[ -z "${efi_part_path}" ]]; then 
         echo "No EFI partition found"
         echo "Aborting! Are you running it on a GEN1 image?"
         exit 1
     fi
 
-    umount $efi_part_path
-    mkfs.vfat -F16 $efi_part_path
-    mount $efi_part_path /boot/efi
+    umount "$efi_part_path"
+    mkfs.vfat -F16 "$efi_part_path"
+    mount "$efi_part_path" /boot/efi
     yum reinstall -y grub2-efi-x64 shim-x64
     yum reinstall grub2-common -y
     
     GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
-    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "centos|redhat")/grub.cfg
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/"$(ls /boot/efi/EFI | grep -i -E 'centos|redhat')"/grub.cfg
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
+    new_efi_uuid="$(blkid -s UUID -o value "$(findmnt /boot/efi -o SOURCE -n)")"
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
     
     resolv-after
-}
+} # End of recover_redhat
 
 recover_suse() {
     resolv-pre
 
-    efi_part_path=$(findmnt -n -o SOURCE /boot/efi)
-    if [[ -z ${efi_part_path}  ]]; then 
+    efi_part_path="$(findmnt -n -o SOURCE /boot/efi)"
+    if [[ -z "${efi_part_path}" ]]; then 
         echo "No EFI partition found"
         echo "Aborting! Are you running it on a GEN1 image?"
         exit 1
     fi
 
-    umount $efi_part_path
-    mkfs.vfat -F16 $efi_part_path
-    mount $efi_part_path /boot/efi
-    zypper remove -y grub2-x86_64-efi
-    zypper install -y grub2-x86_64-efi
-    zypper remove -y shim
-    zypper install -y shim
+    umount "$efi_part_path"
+    mkfs.vfat -F16 "$efi_part_path"
+    mount "$efi_part_path" /boot/efi
+    
+    if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
+            zypper remove -y grub2-x86_64-efi
+            zypper install -y grub2-x86_64-efi
+            zypper remove -y shim
+            zypper install -y shim
+    else
+            zypper remove -y grub2-aarch64-efi
+            zypper install -y grub2-aarch64-efi
+            zypper remove -y shim
+            zypper install -y shim
+    fi
+
     cp /etc/default/grub.rpmsave /etc/default/grub
     shim-install
-    
 
-    boot_uuid=$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))
-echo "search --no-floppy --fs-uuid --set=dev $boot_uuid" >  /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "sles")/grub.cfg   
-echo 'set prefix=($dev)/grub2
-export $prefix
-configfile $prefix/grub.cfg' >>  /boot/efi/EFI/$(ls /boot/efi/EFI | grep -i -E "sles")/grub.cfg
+   # Generate the grug.cfg file.
+    create_suse_grub_cfg 
 
-    
-    grub2-mkconfig -o /boot/grub2/grub.cfg
-    uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
-    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
+    uuid_to_be_replaced="$(awk '/efi/ {print($1)}' /etc/fstab)"
+    uuid_to_be_replaced="${uuid_to_be_replaced//UUID=}"
+    uuid_to_be_replaced="${uuid_to_be_replaced//\"}"
+    new_efi_uuid="$(blkid "${RECOVER_DISK_PATH}"* -t TYPE="vfat" -s UUID -o value)" 
 
+    sed -i "s/$uuid_to_be_replaced/$new_efi_uuid/" /etc/fstab
+    chmod 755 /tmp/action_implementation/initrd-impl.sh
+    # ACTION_DIR is set by prepare_chroot.rs to the path where the action implementation scripts are stored. 
+    "${ACTION_DIR}/initrd-impl.sh"
     resolv-after
-}
+} # End of recover_suse
 
 
 recover_azurelinux() {
     resolv-pre
 
-    efi_part_path=$(findmnt -n -o SOURCE /boot/efi)
-    if [[ -z ${efi_part_path}  ]]; then 
+    efi_part_path="$(findmnt -n -o SOURCE /boot/efi)"
+    if [[ -z "${efi_part_path}" ]]; then 
         echo "No EFI partition found"
         echo "Aborting! Are you running it on a GEN1 image?"
         exit 1
@@ -90,9 +102,9 @@ recover_azurelinux() {
     # we need it to get the mkfs.vfat command
     dnf install dosfstools -y
 
-    umount $efi_part_path
-    mkfs.vfat -F16 $efi_part_path
-    mount $efi_part_path /boot/efi
+    umount "$efi_part_path"
+    mkfs.vfat -F16 "$efi_part_path"
+    mount "$efi_part_path" /boot/efi
     # reinstall the grub2-efi and shim packages
     # install the grub2-efi package if it is not installed
     dnf install grub2-efi -y
@@ -110,16 +122,18 @@ recover_azurelinux() {
     # The output of this command will be used to replace the hardcoded UUID in the grub.cfg file 
 
 
-    boot_uuid=$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))
-    echo "search -n -u $boot_uuid -s" >  grub.cfg   
-    echo 'set prefix=($root)/grub2
-export $prefix
-configfile $prefix/grub.cfg' >>  grub.cfg
+    BOOT_UUID="$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))"
+    cat << EOF > grub.cfg
+search --no-floppy --fs-uuid --set=root ${BOOT_UUID}
+set prefix=(\$root)/grub2
+export prefix
+source $prefix/grub.cfg
+EOF
 
     cd /
 
-    uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    new_efi_uuid=$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))
+    uuid_to_be_replaced="$(awk '/efi/ {print($1)}' /etc/fstab)"
+    new_efi_uuid="$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))"  
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
 
     # Load the script and run the AzureLinux specific parts
@@ -128,31 +142,39 @@ configfile $prefix/grub.cfg' >>  grub.cfg
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
-}
+} # End of recover_azurelinux
 
 recover_ubuntu() {
-    resolve-pre
+    resolv-pre
+    
+    efi_part_path="$(findmnt -n -o SOURCE /boot/efi)"
+    if [[ -z "${efi_part_path}" ]]; then 
+        echo "No EFI partition found"
+        echo "Aborting! Are you running it on a GEN1 image?"
+        exit 1
+    fi
 
-    umount $efi_part_path
-    mkfs.vfat -F16 $efi_part_path
-    mount $efi_part_path /boot/efi
+
+    umount "$efi_part_path"
+    mkfs.vfat -F16 "$efi_part_path"
+    mount "$efi_part_path" /boot/efi
     apt-get install -y --reinstall grub-efi
-    grub-install --efi-directory=/boot/efi --target=x86_64-efi $device
+    grub-install --efi-directory=/boot/efi --target=x86_64-efi "${RECOVER_DISK_PATH}"
     update-grub
-    uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
-    read -ra EFI_DISK <<<$(blkid $efi_part_path)
-    new_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<$i; done)
+    uuid_to_be_replaced="$(awk '/efi/ {print($1)}' /etc/fstab)"
+    read -ra EFI_DISK <<<"$(blkid "$efi_part_path")"
+    new_efi_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<"$i"; done)
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
 
     resolv-after
-}
+} # End of recover_ubuntu
 
 if [[ "$isRedHat" == "true" ]]; then
     recover_redhat
 fi
 
 if [[ "$isSuse" == "true" ]]; then
-    recover_suse
+        recover_suse
 fi
 
 if [[ "$isUbuntu" == "true" ]]; then
