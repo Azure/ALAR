@@ -3,9 +3,11 @@
 
 use std::fs;
 use std::path::Path;
+use log::debug;
 use regex::Regex;
 use anyhow::Result;
 use anyhow::anyhow;
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 pub(crate) struct NvmeController {
@@ -13,6 +15,10 @@ pub(crate) struct NvmeController {
     pub model: String,
     pub disks: Vec<String>,
 }
+
+
+// A global variable (protected by OnceLock), required to identify the nvme disk to be recovered
+static NVME_DISK_PATH_CELL : OnceLock<Result<String>> = OnceLock::new();
 
 fn read_nvme_controllers() -> Result<Vec<NvmeController>> {
     let class_nvme = Path::new("/sys/class/nvme/nvme*").try_exists();
@@ -92,13 +98,20 @@ fn get_nvme_mounts() -> Result<String> {
     Ok(result.split(" ").next().unwrap_or("").to_string())
 }
 
-pub(crate) fn get_recovery_nvme_disk_path() -> anyhow::Result<String> {
+pub(crate) fn get_recovery_nvme_disk_path() -> &'static anyhow::Result<String> {
+    // We use OnceLock to ensure that the NVMe disk path is computed only once and cached for subsequent calls.
+    // Otherwise we have runtime problems even in a single-threaded context, because after the recovery disk got mounted it does interfere with the logic to determine 
+    // what namespaces belong to the local disk and which one belongs to the recovery disk. 
+    NVME_DISK_PATH_CELL.get_or_init(|| {
+
     let mut controllers = read_nvme_controllers()?;
     controllers.retain(|controller| 
          !controller.model.contains("Microsoft NVMe Direct Disk") 
     );
+    debug!("Found NVMe controllers: {:?}", controllers);
 
     let mut nvme_disk_mount = get_nvme_mounts()?;
+    debug!("Found NVMe disk mount: {}", nvme_disk_mount);
     nvme_disk_mount = nvme_disk_mount.split_off(5 ); // Remove '/dev/' prefix
     let _ = nvme_disk_mount.split_off(7 ); // Remove partition suffix
     
@@ -109,5 +122,7 @@ pub(crate) fn get_recovery_nvme_disk_path() -> anyhow::Result<String> {
     if controllers[0].disks.len() > 1 {
         return Err(anyhow!("More than one recovery disk found: {:?}\nPlease use the option '--custom-recover-disk' to pass over the right recovery disk", controllers[0].disks));
     }    
-     Ok(format!("/dev/{}", controllers[0].disks[0].clone()))
+       Ok(format!("/dev/{}", controllers[0].disks[0]))
+}
+    )
 }
