@@ -11,25 +11,33 @@ recover_suse() {
 	# initrd will similarly be - initrd-5.14.21-150400.14.31-azure, initrd-4.12.14-6.43-azure, initrd-4.12.14-95.68-default
 	# there should be a link from 'vmlinuz' and 'initrd' to one of those kernels and corresponding initrd.
 	# -- try to use the links above to find the kernel version, failing that logic, look for the last package installed
-	KERNFILE=$(basename $(realpath -e /boot/vmlinuz))
+	KERNFILE=$(basename "$(realpath -e /boot/vmlinuz)")
 	RET=$?
 
-	# Set these vars up first, for var scope. if $KERNFILE is garbage we'll fix them in the if|fi block below
-	KERNVER=$(echo "${KERNFILE%-*}" | sed 's/vmlinuz-//')
-	KERNBASE=$(echo "${KERNFILE##*-}")
+	# Set these vars up first, for var scope. if ${KERNFILE} is garbage we'll fix them in the if|fi block below
+	KERNVER="${KERNFILE%-*}"
+	KERNVER="${KERNVER#vmlinuz-}"
+	KERNBASE="${KERNFILE##*-}"
 
-	if [[ $RET != 0 ]]; then
+	if [[ ${RET} != 0 ]]; then
 		# We probably didn't have a link for some reason, so fall back to using the package name
-		KERNNAME=$(rpm -qa name="kernel-*" --last | head -n 1 | cut -f 1 -d " " | sed 's/kernel-//' | sed 's/.1.x86_64//')
-		KERNVER=$(echo $KERNNAME | cut -d '-' -f 2-)
-		KERNBASE=$(echo $KERNNAME | cut -d '-' -f 1)
-		KERNFILE=vmlinuz-$KERNVER-$KERNBASE
+		KERNNAME=$(rpm -qa "kernel-*" | sort -r | head -n 1 | sed 's/kernel-//')
+		KERNBASE=$(echo "${KERNNAME}" | cut -d '-' -f 1)
+		KERNVER=$(echo "${KERNNAME}" | cut -d '-' -f 2- | sed 's/\.[^.]*$//')
+		KERNFILE="vmlinuz-${KERNVER}-${KERNBASE}"
 	fi
 
 	INITRD=$(echo $KERNFILE | sed 's/vmlinuz/initrd/')
 	# Get sure that all required modules are loaded
-	dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/$INITRD ${KERNVER}-$KERNBASE
+	# Add some extra modules to the initrd, they are required to read the EFI partition or if QEMU is used to run a VM.
+	RET=$(grep -q hv_vmbus /lib/modules/$(uname -r)/modules.builtin 2>/dev/null; echo $?)
+	if [[ ${RET} -eq 0 ]]; then
+		dracut -f -v -a qemu --add-drivers " vfat hv_vmbus hv_netvsc hv_storvsc " /boot/$INITRD --kver ${KERNVER}-$KERNBASE
+	else
+		dracut -f -v -a qemu --add-drivers " vfat " /boot/$INITRD --kver ${KERNVER}-$KERNBASE	
+	fi
 	# recreate the initrd link  (do this in pwd instead of a absolute path link)
+	rm -f /boot/initrd
 	ln -s /boot/$INITRD /boot/initrd
 	grub2-mkconfig -o /boot/grub2/grub.cfg
 }
@@ -65,7 +73,7 @@ recover_redhat() {
 
 	depmod ${kernel_version}
 	# Get sure that all required modules are loaded
-	dracut -f -v --add-drivers "hv_vmbus hv_netvsc hv_storvsc" /boot/initramfs-${kernel_version}.img ${kernel_version}
+	dracut -f -v -a qemu --add-drivers " vfat hv_vmbus hv_netvsc hv_storvsc " /boot/initramfs-${kernel_version}.img --kver ${kernel_version}
 	# Recreate the the grub.cfg, it could be the initrd line is missing
 	grub2-mkconfig -o /boot/grub2/grub.cfg
 
@@ -84,11 +92,11 @@ recover_azurelinux() {
 		# AzureLinux 2.0
 		# Adding the drivers manually shouldn't be necessary as the dracut-hyperv package ensures that the drivers are included in the initrd.
 		# Bu lets us be safe and add them manually
-		dracut -f -H --add-drivers 'xen-scsifront xen-blkfront xen-acpi-processor xen-evtchn xen-gntalloc xen-gntdev xen-privcmd xen-pciback xenfs hv_utils hv_vmbus hv_storvsc hv_netvsc hv_sock hv_balloon virtio_blk virtio-rng virtio_console virtio_crypto virtio_mem vmw_vsock_virtio_transport vmw_vsock_virtio_transport_common 9pnet_virtio vrf' /boot/initrd-${kernel_version} ${kernel_version}
+		dracut -f -H --add-drivers 'xen-scsifront xen-blkfront xen-acpi-processor xen-evtchn xen-gntalloc xen-gntdev xen-privcmd xen-pciback xenfs hv_utils hv_vmbus hv_storvsc hv_netvsc hv_sock hv_balloon virtio_blk virtio-rng virtio_console virtio_crypto virtio_mem vmw_vsock_virtio_transport vmw_vsock_virtio_transport_common 9pnet_virtio vrf ' /boot/initrd-${kernel_version} --kver ${kernel_version}
 	else
 		# AzureLinux 3.0
 		# No hyperv drivers required. They are already included in the kernel.
-		dracut -f -H /boot/initramfs-${kernel_version}.img ${kernel_version}
+		dracut -f -H -a qemu --add-drivers " vfat " /boot/initramfs-${kernel_version}.img --kver ${kernel_version}
 	fi
 	# Recreate the the grub.cfg, it could be the initrd line is missing
 	grub2-mkconfig -o /boot/grub2/grub.cfg
