@@ -341,3 +341,41 @@ fixOwner() {
       ;;
   esac
 }
+
+create_suse_grub_cfg() {
+  # Let's get the UUID of the boot partition.
+    # In case there is no boot_partition we require the root_partition UUID.
+    # BOOT_PARTITION is set by ALAR prepare_chroot.rs
+
+    get_boot_uuid() {
+        if [[ -z $BOOT_PARTITION  ]]; then 
+            blkid -s UUID -o value $(findmnt / -o SOURCE -n)  
+        else
+            blkid -s UUID -o value ${BOOT_PARTITION}  
+        fi
+    }
+    BOOT_UUID=$(get_boot_uuid)
+
+
+    #Set the directory name in which the UEFI required information are stored. Be aware that EFI does use vfat. There is no distinction between lowercase and uppercase in vfat.
+    VENDOR_DIR="BOOT"  
+    # The grub.cfg file in the EFI partition has a different format in SLE15 and SLE16, we need to check the version of the OS to generate the correct grub.cfg file
+    if [[ ${DISTROVERSION} =~ 16\.[0-9]+ ]]; then 
+
+cat > "/boot/efi/EFI/${VENDOR_DIR}/grub.cfg" <<EOF  
+set btrfs_relative_path="yes"
+search --no-floppy --fs-uuid --set=dev ${BOOT_UUID}  
+set prefix=(\$dev)/grub2  
+source \$prefix/grub.cfg  
+EOF
+
+else
+
+cat > "/boot/efi/EFI/${VENDOR_DIR}/grub.cfg" <<EOF  
+search --no-floppy --fs-uuid --set=dev ${BOOT_UUID}  
+set prefix=(\$dev)/grub2  
+source \$prefix/grub.cfg  
+EOF
+
+    fi
+}
