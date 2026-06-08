@@ -76,6 +76,15 @@ pub(crate) enum Architecture {
     Aarch64,
 }
 
+impl AsRef<std::ffi::OsStr> for Architecture {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        match self {
+            Architecture::X86_64 => std::ffi::OsStr::new("x86_64"),
+            Architecture::Aarch64 => std::ffi::OsStr::new("aarch64"),
+        }
+    }
+}
+
 impl Display for Architecture {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -148,7 +157,10 @@ impl Distro {
                 "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
                 "EFI System Partition 0xEF00",
             ),
-            ("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f", "Linux Swap 0x8200"),
+            (
+                "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f",
+                "Linux Swap 0x8200",
+            ),
             (
                 "21686148-6449-6e6f-744e-656564454649",
                 "Basic Boot Partition 0xEF02",
@@ -162,19 +174,23 @@ impl Distro {
                 "Logical Volume Manager 0x8E00",
             ),
         ]);
-        
+
         // Need to remove the partition suffix for NVMe or NBD disks as the partition type detection commands expect the disk path without the suffix
-         let disk_path = if let Some(suffix_stripped) = disk_path.strip_suffix('p') {
-            debug!("Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands.");
+        let disk_path = if let Some(suffix_stripped) = disk_path.strip_suffix('p') {
+            debug!(
+                "Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands."
+            );
             suffix_stripped
-         } else {
+        } else {
             disk_path
         };
 
         match Path::new("/usr/sbin/sgdisk").try_exists() {
             Ok(_is_present @ true) => {
                 debug!("sgdisk is present on the system.");
-                let command = format!("sgdisk {disk_path} -p | tail -n6 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' ");
+                let command = format!(
+                    "sgdisk {disk_path} -p | tail -n6 | grep -E \"^ *[1,2,3,4,5,6]\" | grep -v EF02 | sed 's/[ ]\\+/ /g;s/^[ \t]*//' "
+                );
                 match helper::run_fun(&command) {
                     Ok(partitions) => {
                         for line in partitions.lines() {
@@ -190,23 +206,34 @@ impl Distro {
                         partition_numbers_types
                     }
                     Err(e) => {
-                        error!("Error getting disk info for disk {} with the help of sgdisk : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
+                        error!(
+                            "Error getting disk info for disk {} with the help of sgdisk : {}. ALAR is not able to proceed. Exiting.",
+                            disk_path, e
+                        );
                         process::exit(1);
                     }
                 }
             }
             Ok(_is_present @ false) => {
                 debug!("sgdisk is not present on the system. Falling back to partx.");
-                // The command constucted below will list partition numbers and types excluding the BOOT partition 
-                let command = format!("partx {disk_path} -gs -o NR,TYPE | grep -v 21686148-6449-6e6f-744e-656564454649");
+                // The command constucted below will list partition numbers and types excluding the BOOT partition
+                let command = format!(
+                    "partx {disk_path} -gs -o NR,TYPE | grep -v 21686148-6449-6e6f-744e-656564454649"
+                );
                 match helper::run_fun(&command) {
                     Ok(partitions) => {
-                        for  line in  partitions.lines() {
-                            let fields: Vec<String> = Self::split_fields(line); 
+                        for line in partitions.lines() {
+                            let fields: Vec<String> = Self::split_fields(line);
                             let partition_number = fields[0].to_string();
                             let partition_type = fields[1].to_string();
-                            // partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
-                             partition_numbers_types.push((partition_number, uuid_type_map.get(partition_type.as_str()).to_owned().unwrap_or(&"Unknown").to_string()));
+                            partition_numbers_types.push((
+                                partition_number,
+                                uuid_type_map
+                                    .get(partition_type.as_str())
+                                    .to_owned()
+                                    .unwrap_or(&"Unknown")
+                                    .to_string(),
+                            ));
                         }
                         debug!(
                             "Partition numbers and types collected via partx: {:#?}",
@@ -215,13 +242,19 @@ impl Distro {
                         partition_numbers_types
                     }
                     Err(e) => {
-                        error!("Error getting disk info for disk {} with the help of parted : {}. ALAR is not able to proceed. Exiting.", disk_path, e);
+                        error!(
+                            "Error getting disk info for disk {} with the help of parted : {}. ALAR is not able to proceed. Exiting.",
+                            disk_path, e
+                        );
                         process::exit(1);
                     }
                 }
             }
             Err(e) => {
-                error!("Error checking for sgdisk presence: {} A general error occured. ALAR is not able to proceed. Exiting.", e);
+                error!(
+                    "Error checking for sgdisk presence: {} A general error occured. ALAR is not able to proceed. Exiting.",
+                    e
+                );
                 process::exit(1);
             }
         }
@@ -250,10 +283,15 @@ impl Distro {
                     debug!("Repair VM OS version detected as: {}", local_os_version);
                     if local_os_version.starts_with("7.") || local_os_version.starts_with("8.") {
                         // allowed
-                        info!("LVM detected on the recovery VM disk. ALAR is able to handle LVM based recovery disks.");
+                        info!(
+                            "LVM detected on the recovery VM disk. ALAR is able to handle LVM based recovery disks."
+                        );
                         true
                     } else {
-                        error!("LVM detected on the recovery VM disk. However, the repair VM OS version is {}. Only RHEL 7.x and 8.x are supported for LVM based recovery disks. Exiting.", local_os_version);
+                        error!(
+                            "LVM detected on the recovery VM disk. However, the repair VM OS version is {}. Only RHEL 7.x and 8.x are supported for LVM based recovery disks. Exiting.",
+                            local_os_version
+                        );
                         false
                     }
                 }
@@ -271,10 +309,12 @@ impl Distro {
 
     pub(crate) fn get_partition_filesystem(partition_path: &str) -> Result<String> {
         // Need to remove the partition suffix for NVMe or NBD disks as the partition type detection commands expect the disk path without the suffix
-         let partition_path = if let Some(suffix_stripped) = partition_path.strip_suffix('p') {
-            debug!("Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands.");
+        let partition_path = if let Some(suffix_stripped) = partition_path.strip_suffix('p') {
+            debug!(
+                "Detected NVMe or NBD disk. Removing 'p' suffix for partition type detection commands."
+            );
             suffix_stripped
-         } else {
+        } else {
             partition_path
         };
 
@@ -309,7 +349,9 @@ impl Distro {
             {
                 pfs
             } else {
-                error!("Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting.");
+                error!(
+                    "Not able to determine the partition filesystem. ALAR is not able to proceed. Exiting."
+                );
                 let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
@@ -432,13 +474,13 @@ impl Distro {
                 // Due to issues with RHEL above version 9.x we need to check whether the repair VM is allowed to use LVM based recovery disks
                 if !Self::is_repairvm_with_lvm_allowed() {
                     let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
-                    telemetry::SeverityLevel::Error,
-                    "ALAR EXCEPTION",
-                      "LVM based recovery disks are not supported on repair VMs with OS version >= 9.x.",
+                        telemetry::SeverityLevel::Error,
+                        "ALAR EXCEPTION",
+                        "LVM based recovery disks are not supported on repair VMs with OS version >= 9.x.",
                         "Distro::is_repairvm_allowed_to_use_lvm() -> get_repair_os_version() returned >= 9.x",
                         cli_info,
                         distro,
-                ));
+                    ));
                     process::exit(1);
                 }
 
@@ -460,11 +502,7 @@ impl Distro {
             }
 
             fn nouuid_option(fstype: &str) -> &str {
-                if fstype == "xfs" {
-                    "nouuid"
-                } else {
-                    ""
-                }
+                if fstype == "xfs" { "nouuid" } else { "" }
             }
 
             let mount_path = format!("{}{}", recovery_disk_path, partition.number);
@@ -635,13 +673,16 @@ impl Distro {
 
         if let LogicalVolumesType::Some(lv) = volumes {
             if lv.is_empty() {
-                error!("No rootlv found in LVM. This is a not supported LVM setup. ALAR is not able to proceed. Exiting.");
-                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(telemetry::SeverityLevel::Error,
+                error!(
+                    "No rootlv found in LVM. This is a not supported LVM setup. ALAR is not able to proceed. Exiting."
+                );
+                let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
+                    telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
-                     "No rootlv found in LVM.",
-                     "Distro::read_distro_name_version_from_lv() -> LogicalVolumesType::Some returned empty vector",
-                     cli_info,
-                     &Distro::default(),
+                    "No rootlv found in LVM.",
+                    "Distro::read_distro_name_version_from_lv() -> LogicalVolumesType::Some returned empty vector",
+                    cli_info,
+                    &Distro::default(),
                 ));
                 process::exit(1);
             }
@@ -733,7 +774,9 @@ impl Distro {
             }
 
             if mount::umount(constants::ASSERT_PATH, true).is_err() {
-                error!("Error umounting rescue-rootlv. This may cause side effects. ALAR is not able to proceed. Exiting.");
+                error!(
+                    "Error umounting rescue-rootlv. This may cause side effects. ALAR is not able to proceed. Exiting."
+                );
                 process::exit(1);
             }
             return Some(DistroNameVersion {
@@ -882,17 +925,26 @@ impl Distro {
             None => {
                 error!("No OS partition found.");
                 error!("Please make sure the disk isn't a Data-disk.");
-                error!("If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues.");
+                error!(
+                    "If you are sure the attached disk is an OS-Disk please report this at: https://github.com/Azure/ALAR/issues."
+                );
                 error!("ALAR isn't able to proceed. Exiting.");
                 let message_details = format!(
                     "No OS partition found during distro detection. Partition details: {:#?}",
                     &partition_details
                 );
+                let lsblk_info = match helper::run_fun("lsblk -f") {
+                    Ok(info) => info,
+                    Err(e) => {
+                        error!("Error getting lsblk info: {e}");
+                        "Error getting lsblk info".to_string()
+                    }
+                };
                 let _ = telemetry::send_envelope(&telemetry::create_exception_envelope(
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                     &message_details,
-                    "Distro::new() -> what_distro_name_version() returned None",
+                    &format!("Distro::new() -> what_distro_name_version() returned None. lsblk information: {:#?}", &lsblk_info),
                     cli_info,
                     &distro,
                 ));
