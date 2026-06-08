@@ -41,14 +41,14 @@ recover_suse() {
 
     zypper install -y gptfdisk
     sgdisk -e "${RECOVER_DISK_PATH}"
-    grub2-install "{$RECOVER_DISK_PATH}"
+    grub2-install "${RECOVER_DISK_PATH}"
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
 }
 
 recover_ubuntu() {
-    resolve-pre
+    resolv-pre
 
     apt-get update
     apt-get install gdisk -y
