@@ -97,14 +97,24 @@ pub fn set_environment(
         env::set_var("DISTRONAME", format!("'{}'", distroname.as_str()));
         env::set_var("DISTROVERSION", distroversion.as_str());
         env::set_var("isLVM", convert_bool(distro.is_lvm));
-        env::set_var(
-            "RECOVER_DISK_PATH",
-            helper::get_recovery_disk_path(cli_info),
-        );
+        env::set_var("ACTION_DIR", constants::ACTION_IMPL_DIR);
+        env::set_var("ARCHITECTURE", distro.architecture);
+
+        let disk_type = helper::what_disk_type(&helper::get_recovery_disk_path(cli_info))
+            .unwrap_or(helper::DiskType::Scsi);
+        let mut recovery_disk_path = helper::get_recovery_disk_path(cli_info);
+        if matches!(disk_type, helper::DiskType::Nvme | helper::DiskType::Nbd) {
+            let _ = recovery_disk_path.pop(); // remove the last character, we need the device name only.
+            env::set_var("RECOVER_DISK_PATH", recovery_disk_path);
+        } else {
+            env::set_var("RECOVER_DISK_PATH", recovery_disk_path);
+        }
+
         env::set_var(
             "OS_PARTITION",
             partitions.get("os").unwrap().number.to_string(),
         );
+
         if partitions.contains_key("boot") {
             env::set_var(
                 "BOOT_PARTITION",
@@ -119,6 +129,7 @@ pub fn set_environment(
                 ),
             );
         }
+
         if partitions.contains_key("efi") {
             env::set_var(
                 "EFI_PARTITION",
@@ -255,7 +266,11 @@ fn mount_required_partitions<'a>(
             });
         lv_set
             .iter()
-            .filter(|volume| volume.name == "rootvg-usrlv" || volume.name == "rootvg-varlv" || volume.name == "rootvg-tmplv")
+            .filter(|volume| {
+                volume.name == "rootvg-usrlv"
+                    || volume.name == "rootvg-varlv"
+                    || volume.name == "rootvg-tmplv"
+            })
             .for_each(|lv| {
                 let options = if lv.fstype == "xfs" { "nouuid" } else { "" };
                 match mount::mount(
