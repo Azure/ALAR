@@ -37,7 +37,7 @@ recover_redhat() {
     if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
         yum reinstall -y grub2-efi-x64 shim-x64
     else
-        yum reinstall -y grub2-efi-aa64 shim-aa64   
+        yum reinstall -y grub2-efi-aa64 shim-aa64
     fi
 
    DISTRO_VERSION=$(source /etc/os-release; echo "${VERSION%.*}")

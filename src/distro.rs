@@ -157,10 +157,7 @@ impl Distro {
                 "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
                 "EFI System Partition 0xEF00",
             ),
-            (
-                "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f",
-                "Linux Swap 0x8200",
-            ),
+            ("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f", "Linux Swap 0x8200"),
             (
                 "21686148-6449-6e6f-744e-656564454649",
                 "Basic Boot Partition 0xEF02",
@@ -599,18 +596,13 @@ impl Distro {
                 }
 
                 // What is the architecture of the system to be recovered?
-                let file_bash_info = match helper::run_fun("file /tmp/assert/bin/bash") {
-                    Ok(info) => info,
-                    Err(e) => {
-                        error!("Error getting bash info: {e}");
-                        "".to_string()
+                match std::env::consts::ARCH {
+                    "x86_64" => distro.architecture = Architecture::X86_64,
+                    "aarch64" => distro.architecture = Architecture::Aarch64,
+                    other => {
+                        error!("Unsupported architecture detected: {}. ALAR is not able to proceed. Exiting.", other);
+                        process::exit(1);
                     }
-                };
-
-                if file_bash_info.contains("aarch64") {
-                    distro.architecture = Architecture::Aarch64;
-                } else {
-                    distro.architecture = Architecture::X86_64;
                 }
 
                 match mount::umount(constants::ASSERT_PATH, false) {
@@ -944,7 +936,10 @@ impl Distro {
                     telemetry::SeverityLevel::Error,
                     "ALAR EXCEPTION",
                     &message_details,
-                    &format!("Distro::new() -> what_distro_name_version() returned None. lsblk information: {:#?}", &lsblk_info),
+                    &format!(
+                        "Distro::new() -> what_distro_name_version() returned None. lsblk information: {:#?}",
+                        &lsblk_info
+                    ),
                     cli_info,
                     &distro,
                 ));
