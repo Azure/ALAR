@@ -31,7 +31,12 @@ recover_redhat() {
     umount "$efi_part_path"
     mkfs.vfat -F16 "$efi_part_path"
     mount "$efi_part_path" /boot/efi
-    yum reinstall -y grub2-efi-x64 shim-x64
+
+    if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
+        yum reinstall -y grub2-efi-x64 shim-x64
+    else
+        yum reinstall grub2-efi-aarch64 grub2-efi-aarch64-modules shim-aarch64   
+    fi
     yum reinstall grub2-common -y
     
     GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -63,13 +68,15 @@ recover_suse() {
             zypper remove -y shim
             zypper install -y shim
     else
-            zypper remove -y grub2-aarch64-efi
-            zypper install -y grub2-aarch64-efi
+            zypper remove -y grub2-branding-SLE
+            zypper install -y grub2-branding-SLE
+            zypper remove -y grub2-efi
+            zypper install -y grub2-efi
             zypper remove -y shim
             zypper install -y shim
     fi
 
-    cp /etc/default/grub.rpmsave /etc/default/grub
+    grub2-install --target=arm64-efi --efi-directory=/boot/efi
     shim-install
 
    # Generate the grug.cfg file.

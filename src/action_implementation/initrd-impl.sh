@@ -7,38 +7,49 @@
 #
 
 recover_suse() {
-	# Kernel will be one of the following styles of files - vmlinux-5.14.21-150400.14.31-azure vmlinuz-4.12.14-6.43-azure vmlinuz-4.12.14-95.68-default
-	# initrd will similarly be - initrd-5.14.21-150400.14.31-azure, initrd-4.12.14-6.43-azure, initrd-4.12.14-95.68-default
-	# there should be a link from 'vmlinuz' and 'initrd' to one of those kernels and corresponding initrd.
-	# -- try to use the links above to find the kernel version, failing that logic, look for the last package installed
-	KERNFILE=$(basename "$(realpath -e /boot/vmlinuz)")
-	RET=$?
 
-	# Set these vars up first, for var scope. if ${KERNFILE} is garbage we'll fix them in the if|fi block below
+	latest_kernel_file() {
+		# Returns the latest installed kernel version in case we have more than one installed.
+		local latest_file=""
+		local latest_ctime=-1
+		local candidate
+		local candidate_ctime
+
+		for candidate in /boot/vmlinux*; do
+			[[ -e "$candidate" ]] || continue
+			candidate_ctime=$(stat -c %W "$candidate" 2>/dev/null) || continue
+			if [[ -z "$latest_file" || "$candidate_ctime" -gt "$latest_ctime" ]]; then
+				latest_file="$candidate"
+				latest_ctime="$candidate_ctime"
+			fi
+		done
+	
+		if [[ -z "$latest_file" ]]; then
+			echo "No kernel file found in /boot. Aborting! Get a valid kernel installed and try again."
+			exit 1
+		fi	
+
+		basename "$latest_file"
+	}
+
+	KERNFILE=$(latest_kernel_file)
+
+	# Set these vars up first, for var scope. If ${KERNFILE} is garbage we'll fix them in the if|fi block below
 	KERNVER="${KERNFILE%-*}"
-	KERNVER="${KERNVER#vmlinuz-}"
+	KERNVER="${KERNVER#vmlinux-}"
 	KERNBASE="${KERNFILE##*-}"
+	KERNBASE="${KERNBASE%.gz}"
 
-	if [[ ${RET} != 0 ]]; then
-		# We probably didn't have a link for some reason, so fall back to using the package name
-		KERNNAME=$(rpm -qa "kernel-*" | sort -r | head -n 1 | sed 's/kernel-//')
-		KERNBASE=$(echo "${KERNNAME}" | cut -d '-' -f 1)
-		KERNVER=$(echo "${KERNNAME}" | cut -d '-' -f 2- | sed 's/\.[^.]*$//')
-		KERNFILE="vmlinuz-${KERNVER}-${KERNBASE}"
-	fi
 
-	INITRD=$(echo $KERNFILE | sed 's/vmlinuz/initrd/')
+	INITRD=$(echo $KERNFILE | sed 's/vmlinux/initrd/')
 	# Get sure that all required modules are loaded
 	# Add some extra modules to the initrd, they are required to read the EFI partition or if QEMU is used to run a VM.
-	RET=$(grep -q hv_vmbus /lib/modules/$(uname -r)/modules.builtin 2>/dev/null; echo $?)
-	if [[ ${RET} -eq 0 ]]; then
+	RET=$(grep -q hv_vmbus /lib/modules/${KERNVER}-${KERNBASE}/modules.builtin 2>/dev/null; echo $?)
+	if [[ ${RET} -eq 1 ]]; then
 		dracut -f -v -a qemu --add-drivers " vfat hv_vmbus hv_netvsc hv_storvsc " /boot/$INITRD --kver ${KERNVER}-$KERNBASE
 	else
 		dracut -f -v -a qemu --add-drivers " vfat " /boot/$INITRD --kver ${KERNVER}-$KERNBASE	
 	fi
-	# recreate the initrd link  (do this in pwd instead of a absolute path link)
-	rm -f /boot/initrd
-	ln -s /boot/$INITRD /boot/initrd
 	grub2-mkconfig -o /boot/grub2/grub.cfg
 }
 
