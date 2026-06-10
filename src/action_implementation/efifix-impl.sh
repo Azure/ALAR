@@ -40,7 +40,7 @@ recover_redhat() {
         yum reinstall -y grub2-efi-aa64 shim-aa64   
     fi
 
-   DISTRO_VERSION=$(source /etc/os-release; echo ${VERSION%.*})
+   DISTRO_VERSION=$(source /etc/os-release; echo "${VERSION%.*}")
     if [[ "${DISTRO_VERSION}" == "7" ]]; then
         GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
         GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/"$(ls /boot/efi/EFI | grep -i -E 'centos|redhat')"/grub.cfg
@@ -64,7 +64,7 @@ search --no-floppy --fs-uuid --set=dev ${boot_uuid}
 set prefix=(\$dev)/grub2  
 export \$prefix  
 configfile \$prefix/grub.cfg  
-EOF  
+EOF
     fi 
 
     # Also replace the UUID in the fstab file to make sure that the system can find the EFI partition to mount it at boot time.
@@ -156,13 +156,13 @@ recover_azurelinux() {
     # The output of this command will be used to replace the hardcoded UUID in the grub.cfg file 
 
 
-    BOOT_UUID="$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))"
-    cat << EOF > grub.cfg
-search --no-floppy --fs-uuid --set=root ${BOOT_UUID}
-set prefix=(\$root)/grub2
-export prefix
-source $prefix/grub.cfg
-EOF
+    BOOT_UUID="$(blkid -s UUID -o value "$(findmnt /boot -o SOURCE -n)")"
+    {
+        printf 'search --no-floppy --fs-uuid --set=root %s\n' "${BOOT_UUID}"
+        printf 'set prefix=(\\$root)/grub2\n'
+        printf 'export prefix\n'
+        printf 'source \\$prefix/grub.cfg\n'
+    } > grub.cfg
 
     cd /
 
