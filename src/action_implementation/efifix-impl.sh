@@ -27,20 +27,47 @@ recover_redhat() {
         echo "Aborting! Are you running it on a GEN1 image?"
         exit 1
     fi
-
+    # In case the efi partition got deleted by accident we need to recreate it and reinstall the grub2-efi and shim packages to be able to boot again.
     umount "$efi_part_path"
     mkfs.vfat -F16 "$efi_part_path"
     mount "$efi_part_path" /boot/efi
 
+    yum reinstall grub2-common -y
+
     if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
         yum reinstall -y grub2-efi-x64 shim-x64
     else
-        yum reinstall grub2-efi-aarch64 grub2-efi-aarch64-modules shim-aarch64   
+        yum reinstall -y grub2-efi-aa64 shim-aa64   
     fi
-    yum reinstall grub2-common -y
-    
+
+   DISTRO_VERSION=$(source /etc/os-release; echo ${VERSION%.*})
+    if [[ "${DISTRO_VERSION}" == "7" ]]; then
+        GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
+        GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/"$(ls /boot/efi/EFI | grep -i -E 'centos|redhat')"/grub.cfg
+    else
+        # Verify the system does use the BLS configuration style.
+        if grep -q 'GRUB_ENABLE_BLSCFG=true' /etc/default/grub ; then
+            # Regenerate the loader entries for all installed kernels. 
+            for k in /lib/modules/*; do
+                ver=$(basename "$k")
+                kernel-install add "$ver" "/lib/modules/$ver/vmlinuz"
+            done
+        fi
     GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
-    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/efi/EFI/"$(ls /boot/efi/EFI | grep -i -E 'centos|redhat')"/grub.cfg
+
+    # The grub.cfg file in the EFI partition has a hardcoded UUID for the boot partition. We need to replace it with the correct UUID to be able to boot again.
+        vendor_dir=$(ls /boot/efi/EFI | grep -i -E "centos|redhat|almalinux")  
+        boot_uuid=$(blkid -s UUID -o value $(findmnt /boot -o SOURCE -n))  
+
+cat > "/boot/efi/EFI/${vendor_dir}/grub.cfg" <<EOF  
+search --no-floppy --fs-uuid --set=dev ${boot_uuid}  
+set prefix=(\$dev)/grub2  
+export \$prefix  
+configfile \$prefix/grub.cfg  
+EOF  
+    fi 
+
+    # Also replace the UUID in the fstab file to make sure that the system can find the EFI partition to mount it at boot time.
     uuid_to_be_replaced=$(awk '/efi/ {print($1)}' /etc/fstab)
     new_efi_uuid="$(blkid -s UUID -o value "$(findmnt /boot/efi -o SOURCE -n)")"
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
