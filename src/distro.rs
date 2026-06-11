@@ -595,16 +595,6 @@ impl Distro {
                     }
                 }
 
-                // What is the architecture of the system to be recovered?
-                match std::env::consts::ARCH {
-                    "x86_64" => distro.architecture = Architecture::X86_64,
-                    "aarch64" => distro.architecture = Architecture::Aarch64,
-                    other => {
-                        error!("Unsupported architecture detected: {}. ALAR is not able to proceed. Exiting.", other);
-                        process::exit(1);
-                    }
-                }
-
                 match mount::umount(constants::ASSERT_PATH, false) {
                     Ok(_) => {}
                     Err(e) => error_condition_umount(e),
@@ -949,6 +939,18 @@ impl Distro {
         // Correct the filesystem for a non LVM ADE disk
         Self::ade_set_no_lvm_partiton_fs(&mut partition_details);
 
+        // What is the architecture of the system to be recovered?
+        match std::env::consts::ARCH {
+            "x86_64" => distro.architecture = Architecture::X86_64,
+            "aarch64" => distro.architecture = Architecture::Aarch64,
+            other => {
+                error!(
+                    "Unsupported architecture detected: {}. ALAR is not able to proceed. Exiting.",
+                    other
+                );
+                process::exit(1);
+            }
+        }
         distro.partitions = partition_details;
         distro.distro_name_version = distro_name;
         distro.cli_info = cli_info.clone();
