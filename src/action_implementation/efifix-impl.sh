@@ -86,8 +86,6 @@ recover_suse() {
     fi
 
     umount "$efi_part_path"
-    mkfs.vfat -F16 "$efi_part_path"
-    mount "$efi_part_path" /boot/efi
     
     if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
             zypper remove -y grub2-x86_64-efi
@@ -116,8 +114,6 @@ recover_suse() {
 
     sed -i "s/$uuid_to_be_replaced/$new_efi_uuid/" /etc/fstab
     chmod 755 /tmp/action_implementation/initrd-impl.sh
-    # ACTION_DIR is set by prepare_chroot.rs to the path where the action implementation scripts are stored. 
-    "${ACTION_DIR}/initrd-impl.sh"
     resolv-after
 } # End of recover_suse
 
@@ -170,9 +166,6 @@ recover_azurelinux() {
     new_efi_uuid="$(blkid -s UUID -o value $(findmnt /boot/efi -o SOURCE -n))"  
     sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
 
-    # Load the script and run the AzureLinux specific parts
-    # We still run in a chroot context with specific environment variables set.
-    bash /tmp/action_implementation/initrd-impl.sh
     grub2-mkconfig -o /boot/grub2/grub.cfg
 
     resolv-after
@@ -192,13 +185,27 @@ recover_ubuntu() {
     umount "$efi_part_path"
     mkfs.vfat -F16 "$efi_part_path"
     mount "$efi_part_path" /boot/efi
-    apt-get install -y --reinstall grub-efi
-    grub-install --efi-directory=/boot/efi --target=x86_64-efi "${RECOVER_DISK_PATH}"
+
+    if [[ "${ARCHITECTURE}" == "x86_64" ]]; then
+        apt update
+        apt install --reinstall grub-efi-amd64-bin grub-efi-amd64-signed shim-signed efibootmgr
+        grub-install --efi-directory=/boot/efi --target=x86_64-efi 
+    else
+        apt update
+        apt install --reinstall grub-efi-arm64-bin grub-efi-arm64-signed shim-signed efibootmgr   
+        grub-install --efi-directory=/boot/efi --target=arm64-efi 
+    fi
+
     update-grub
     uuid_to_be_replaced="$(awk '/efi/ {print($1)}' /etc/fstab)"
     read -ra EFI_DISK <<<"$(blkid "$efi_part_path")"
     new_efi_uuid=$(for i in "${EFI_DISK[@]}"; do grep ^UUID= <<<"$i"; done)
-    sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
+    # Depending on the distro image the fstab file can contain either the UUID or the LABEL of the EFI partition. We need to replace it with the correct one to make sure that the system can find the EFI partition to mount it at boot time.
+    if grep -q '^LABEL.*' <<< "${uuid_to_be_replaced}" ; then  
+        fatlabel $efi_part_path UEFI
+    else
+        sed -i "s/$uuid_to_be_replaced/UUID=$new_efi_uuid/" /etc/fstab
+    fi
 
     resolv-after
 } # End of recover_ubuntu
