@@ -10,11 +10,11 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::Serialize;
 use std::env;
-use std::time::Duration;
 use std::collections::HashMap;
+use std::time::Duration;
 
 #[allow(dead_code)]
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SeverityLevel {
     Verbose,
     Information,
@@ -24,68 +24,69 @@ pub enum SeverityLevel {
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct ExceptionBaseData {
     ver: u8,
     exceptions: Vec<Exceptions>,
-    severityLevel: SeverityLevel,
+    severity_level: SeverityLevel,
     properties: HashMap<String, String>,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct TraceBaseData {
     ver: u8,
     message: String,
-    severityLevel: SeverityLevel,
+    severity_level: SeverityLevel,
     properties: HashMap<String, String>,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct Exceptions {
-    typeName: String,
+    type_name: String,
     message: String,
     stack: String,
-    hasFullStack: bool,
+    has_full_stack: bool,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct TraceBase {
-    baseType: String,
-    baseData: TraceBaseData,
+    base_type: String,
+    base_data: TraceBaseData,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct ExceptionBase {
-    baseType: String,
-    baseData: ExceptionBaseData,
+    base_type: String,
+    base_data: ExceptionBaseData,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct TraceEnvelope {
     name: String,
     time: String,
-    iKey: String,
+    #[serde(rename = "iKey")]
+    i_key: String,
     tags: HashMap<String, String>,
     data: TraceBase,
 }
 
 #[derive(Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct ExceptionEnvelope {
     name: String,
     time: String,
-    iKey: String,
+    #[serde(rename = "iKey")]
+    i_key: String,
     tags: HashMap<String, String>,
     data: ExceptionBase,
 }
 
 #[derive(Debug, Clone)]
-#[allow(non_snake_case)]
 pub struct OsNameArchitecture {
     repair_os_name: String,
     repair_os_version: String,
@@ -106,31 +107,26 @@ impl OsNameArchitecture {
     }
 }
 
-pub(crate) fn create_exception_envelope(
-    severity_level: SeverityLevel,
-    type_name: &str,
-    message: &str,
-    stack: &str,
+fn initiator_label(initiator: &cli::Initiator) -> &'static str {
+    match initiator {
+        cli::Initiator::Cli => "CLI",
+        cli::Initiator::RecoverVm => "RecoverVm",
+        cli::Initiator::SelfHelp => "SelfHelp",
+    }
+}
+
+fn telemetry_properties(
     cli_info: &cli::CliInfo,
     distro: &distro::Distro,
-) -> ExceptionEnvelope {
-    let repair_info = OsNameArchitecture::new(distro.architecture);
-
-    // Properties for baseData
-    let properties: HashMap<String, String> = HashMap::from([
+    repair_info: &OsNameArchitecture,
+) -> HashMap<String, String> {
+    HashMap::from([
         (
             "Initiator".to_owned(),
-            match cli_info.initiator {
-                cli::Initiator::Cli => "CLI".to_owned(),
-                cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
-                cli::Initiator::SelfHelp => "SelfHelp".to_owned(),
-            },
+            initiator_label(&cli_info.initiator).to_owned(),
         ),
-        (
-            "Action".to_owned(),
-            cli_info.actions.clone(),
-        ),
-        ("Architecture".to_owned(), repair_info.arch),
+        ("Action".to_owned(), cli_info.actions.clone()),
+        ("Architecture".to_owned(), repair_info.arch.clone()),
         (
             "RepairDistroNameVersion".to_owned(),
             format!(
@@ -145,43 +141,51 @@ pub(crate) fn create_exception_envelope(
                 distro.distro_name_version.name, distro.distro_name_version.version_id
             ),
         ),
-    ]);
+    ])
+}
+
+fn telemetry_tags(cli_info: &cli::CliInfo) -> HashMap<String, String> {
+    HashMap::from([
+        ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
+        (
+            "ai.internal.sdkVersion".to_owned(),
+            clap::crate_version!().to_owned(),
+        ),
+        (
+            "Initiator".to_owned(),
+            initiator_label(&cli_info.initiator).to_owned(),
+        ),
+        ("Action".to_owned(), cli_info.actions.clone()),
+    ])
+}
+
+pub(crate) fn create_exception_envelope(
+    severity_level: SeverityLevel,
+    type_name: &str,
+    message: &str,
+    stack: &str,
+    cli_info: &cli::CliInfo,
+    distro: &distro::Distro,
+) -> ExceptionEnvelope {
+    let repair_info = OsNameArchitecture::new(distro.architecture);
 
     ExceptionEnvelope {
         name: "Microsoft.ApplicationInsights.Exception".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        iKey: get_ikey(),
-        tags: HashMap::from([
-            ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
-            (
-                "ai.internal.sdkVersion".to_owned(),
-                clap::crate_version!().to_owned(),
-            ),
-            (
-                "Initiator".to_owned(),
-                match cli_info.initiator {
-                    cli::Initiator::Cli => "CLI".to_owned(),
-                    cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
-                    cli::Initiator::SelfHelp => "SelfHelp".to_owned(),
-                },
-            ),
-            (
-                "Action".to_owned(),
-                cli_info.actions.clone(),
-            ),
-        ]),
+        i_key: get_ikey(),
+        tags: telemetry_tags(cli_info),
         data: ExceptionBase {
-            baseType: "ExceptionData".to_owned(),
-            baseData: ExceptionBaseData {
+            base_type: "ExceptionData".to_owned(),
+            base_data: ExceptionBaseData {
                 ver: 2,
                 exceptions: vec![Exceptions {
-                    typeName: type_name.to_owned(),
+                    type_name: type_name.to_owned(),
                     message: message.to_owned(),
                     stack: stack.to_owned(),
-                    hasFullStack: true,
+                    has_full_stack: true,
                 }],
-                severityLevel: severity_level,
-                properties,
+                severity_level,
+                properties: telemetry_properties(cli_info, distro, &repair_info),
             },
         },
     }
@@ -195,54 +199,18 @@ pub(crate) fn create_trace_envelope(
 ) -> TraceEnvelope {
     let repair_info = OsNameArchitecture::new(distro.architecture);
 
-    let initiator = match cli_info.initiator {
-        cli::Initiator::Cli => "CLI".to_owned(),
-        cli::Initiator::RecoverVm => "RecoverVm".to_owned(),
-        cli::Initiator::SelfHelp => "SelfHelp".to_owned(),
-    };
-
-    // Properties for baseData
-    let properties = HashMap::from([
-        ("Initiator".to_owned(), initiator),
-        (
-            "Action".to_owned(),
-            String::from(&cli_info.actions),
-        ),
-        ("Architecture".to_owned(), repair_info.arch),
-        (
-            "RepairDistroNameVersion".to_owned(),
-            format!(
-                "{} : {}",
-                repair_info.repair_os_name, repair_info.repair_os_version
-            ),
-        ),
-        (
-            "RecoverDistroNameVersion".to_owned(),
-            format!(
-                "{} : {}",
-                distro.distro_name_version.name, distro.distro_name_version.version_id
-            ),
-        ),
-    ]);
-
     TraceEnvelope {
         name: "Microsoft.ApplicationInsights.Message".to_owned(),
         time: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        iKey: get_ikey(),
-        tags: HashMap::from([
-            ("ai.cloud.role".to_owned(), "ALAR".to_owned()),
-            (
-                "ai.internal.sdkVersion".to_owned(),
-                clap::crate_version!().to_owned(),
-            ),
-        ]),
+        i_key: get_ikey(),
+        tags: telemetry_tags(cli_info),
         data: TraceBase {
-            baseType: "MessageData".to_owned(),
-            baseData: TraceBaseData {
+            base_type: "MessageData".to_owned(),
+            base_data: TraceBaseData {
                 ver: 2,
                 message: message.to_owned(),
-                severityLevel: severity_level,
-                properties,
+                severity_level,
+                properties: telemetry_properties(cli_info, distro, &repair_info),
             },
         },
     }
@@ -250,30 +218,29 @@ pub(crate) fn create_trace_envelope(
 
 // See the following doc about key information: https://learn.microsoft.com/en-us/azure/azure-monitor/app/connection-strings
 const KEY_LOCATION : &str = "InstrumentationKey=67ca72ac-0de7-4f4d-b66a-e8af80638c00;IngestionEndpoint=https://polandcentral-0.in.applicationinsights.azure.com/;LiveEndpoint=https://polandcentral.livediagnostics.monitor.azure.com/;ApplicationId=ff9a02a2-91f0-4e98-96a5-06dfb4621f40";
+fn connection_string_value<'a>(connection_string: &'a str, key: &str) -> Option<&'a str> {
+    connection_string.split(';').find_map(|part| {
+        let part = part.trim();
+        let (part_key, value) = part.split_once('=')?;
+
+        if part_key.eq_ignore_ascii_case(key) {
+            Some(value.trim().trim_matches('"'))
+        } else {
+            None
+        }
+    })
+}
+
 pub(crate) fn get_endpoint() -> String {
-    KEY_LOCATION.split(';')
-        .find_map(|part| {
-            let part = part.trim();
-            if part.to_ascii_lowercase().starts_with("ingestionendpoint=") {
-                Some(format!("{}/v2/track", part["ingestionendpoint=".len()..].trim().trim_matches('"')))
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| String::from("https://dc.services.visualstudio.com/v2/track")).to_string()
+    connection_string_value(KEY_LOCATION, "IngestionEndpoint")
+        .map(|endpoint| format!("{endpoint}/v2/track"))
+        .unwrap_or_else(|| "https://dc.services.visualstudio.com/v2/track".to_owned())
 }   
 
 pub(crate) fn get_ikey() -> String {
-    KEY_LOCATION.split(';')
-        .find_map(|part| {
-            let part = part.trim();
-            if part.to_ascii_lowercase().starts_with("instrumentationkey=") {
-                Some(part["instrumentationkey=".len()..].trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "".to_string())
+    connection_string_value(KEY_LOCATION, "InstrumentationKey")
+        .unwrap_or_default()
+        .to_owned()
 }
 
 pub(crate) fn send_envelope<T: Serialize>(envelope: &T) -> anyhow::Result<()> {
