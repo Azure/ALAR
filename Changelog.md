@@ -6,6 +6,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 1.4.2 (2026-07-15)
+What's New
+
+Bug Fixes & Reliability Improvements
+
+• Mixed SCSI/NVMe controller support — Fixed a crash (core dump) when a VM has both SCSI and NVMe controllers present. ALAR now correctly falls back to SCSI in mixed environments.
+• Virtio disk support — Added  /dev/vd*  (virtio) disk detection, broadening compatibility with non-Azure hypervisors and test environments.
+• NVMe disk path caching — Prevented a race condition where calling  get_recovery_nvme_disk_path()  after the recovery disk was already mounted could return incorrect results.
+• Architecture detection — Replaced fragile  file /bin/bash  inspection (requiring a live mount) with  std::env::consts::ARCH  for reliable x86_64/aarch64 detection.
+
+EFI Recovery Improvements ( efifix )
+
+• RHEL/CentOS: Fixed  kernel-install add  to include the initramfs path; improved EFI  grub.cfg  generation and fstab UUID replacement.
+• SUSE: EFI partition is now recreated ( mkfs.vfat  + remount) before reinstalling boot packages; fixed ARM64 package name ( grub2-arm64-efi ).
+• Azure Linux: Added version-aware recovery (v3 vs v4) with architecture-specific EFI package handling; added fallback for systems without a dedicated  /boot  partition; more reliable fstab EFI entry update.
+• Ubuntu: Fixed non-interactive  apt install  ( -y ) and corrected fstab UUID replacement pattern.
+
+GRUB / initrd Improvements
+
+• BLS (Boot Loader Specification) support —  kernel-impl  and  initrd-impl  now detect  GRUB_ENABLE_BLSCFG=true  and regenerate BLS loader entries via  kernel-install add  before running  grub2-mkconfig . This fixes boot failures on RHEL 8+/Azure Linux with BLS-style GRUB configs.
+• RHEL kernel recovery — RHEL 8+ now uses  grubby --set-default  to pin the target kernel and rewrites the EFI  grub.cfg  with the correct boot UUID instead of relying on  GRUB_DEFAULT=1 .
+• Added  GRUB_DISABLE_OS_PROBER=true  to prevent OS prober from interfering with config generation in chroot environments.
+
+Script Environment
+
+• Repair scripts now receive  ARCHITECTURE  and  ACTION_DIR  environment variables, enabling architecture-aware logic in shell scripts.
+• Script output now streams in real-time to the console (previously buffered until completion).
+
+Code Quality
+
+• Telemetry structs refactored to idiomatic Rust ( snake_case  +  serde rename_all ) removing  #[allow(non_snake_case)]  workarounds.
+• Improved error diagnostics:  lsblk -f  output is now included in telemetry when OS partition detection fails.
+• Dependency updates ( Cargo.lock ).
+
 ## 1.4.1 (2026-03-10)
 Rewrote 'fstab' action in python3
   - more flexible handling of LVM and 'spec' field options
