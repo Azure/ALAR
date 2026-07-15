@@ -52,3 +52,7 @@ Mkfile.old
 dkms.conf
 
 target/*
+alar-test/.deploy-logs/
+alar-test/remote-targets.conf
+alar-test/actions.conf
+alar-test/cloud-images/

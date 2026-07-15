@@ -83,16 +83,22 @@ pub(crate) fn run_repair_script(action_name: &str) -> Result<()> {
     helper::run_cmd(&command)?;
 
     println!("--- Action script output start ---");
-    let output = process::Command::new("chroot")
+    io::stdout().flush().unwrap();
+    io::stderr().flush().unwrap();
+
+    let status = process::Command::new("chroot")
         .arg(constants::RESCUE_ROOT)
         .arg("/bin/bash")
         .arg("-c")
-        .arg(file_name)
-        .output()?;
+        .arg(format!("{} 2>&1", file_name))
+        .stdout(process::Stdio::inherit())
+        .stderr(process::Stdio::inherit())
+        .status()?;
 
-    io::stdout().write_all(&output.stdout).unwrap();
-    io::stderr().write_all(&output.stderr).unwrap();
-    println!("--- Action script output end ---");
+    io::stdout().flush().unwrap();
+    io::stderr().flush().unwrap();
+    println!("--- Action script output end (exit code: {}) ---", status.code().unwrap_or(-1));
+    io::stdout().flush().unwrap();
 
     // Get out of constants::RESCUE_ROOT, otherwise umount isn't possible for RESCUE_ROOT
     match env::set_current_dir("/") {

@@ -85,9 +85,18 @@ recover_redhat() {
 	depmod ${kernel_version}
 	# Get sure that all required modules are loaded
 	dracut -f -v -a qemu --add-drivers " vfat hv_vmbus hv_netvsc hv_storvsc " /boot/initramfs-${kernel_version}.img --kver ${kernel_version}
-	# Recreate the the grub.cfg, it could be the initrd line is missing
-	grub2-mkconfig -o /boot/grub2/grub.cfg
 
+	# Recreate the the grub.cfg, it could be the initrd line is missing
+	# Take care of the BLS configuration style if it's used. 
+	if grep -q 'GRUB_ENABLE_BLSCFG=true' /etc/default/grub ; then
+            # Regenerate the loader entries for all installed kernels. 
+        for k in /lib/modules/*; do
+            ver=$(basename "$k")
+            kernel-install add "$ver" "/lib/modules/$ver/vmlinuz"
+        done
+    fi
+    
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
 }
 
 recover_azurelinux() {
@@ -109,8 +118,19 @@ recover_azurelinux() {
 		# No hyperv drivers required. They are already included in the kernel.
 		dracut -f -H -a qemu --add-drivers " vfat " /boot/initramfs-${kernel_version}.img --kver ${kernel_version}
 	fi
+
 	# Recreate the the grub.cfg, it could be the initrd line is missing
-	grub2-mkconfig -o /boot/grub2/grub.cfg
+	# Take care of the BLS configuration style if it's used. 
+	if grep -q 'GRUB_ENABLE_BLSCFG=true' /etc/default/grub ; then
+            # Regenerate the loader entries for all installed kernels. 
+        for k in /lib/modules/*; do
+            ver=$(basename "$k")
+            kernel-install add "$ver" "/lib/modules/$ver/vmlinuz"
+        done
+    fi
+    
+    GRUB_DISABLE_OS_PROBER=true grub2-mkconfig -o /boot/grub2/grub.cfg
+
 }
 
 if [[ "$isRedHat" == "true" ]]; then

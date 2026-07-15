@@ -35,7 +35,7 @@ pub(crate) fn what_disk_type(path: &str) -> Result<DiskType> {
         } else {
             Ok(DiskType::Nvme)
         }
-    } else if path.contains("/dev/sd") {
+    } else if path.contains("/dev/sd") || path.contains("/dev/vd") {
         Ok(DiskType::Scsi)
     } else if path.contains("/dev/nbd") {
         Ok(DiskType::Nbd)
