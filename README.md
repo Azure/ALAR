@@ -104,6 +104,10 @@ plaintext. Detection uses volume/path metadata only: it does not mount the BEK
 disk or read key contents. Probe failures also refuse NVMe rather than assume
 that no key is present.
 
+Attaching an encrypted disk to an already-created rescue VM does not by itself
+guarantee a BEK volume. The documented [automatic BEK workflow](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/linux/unlock-encrypted-linux-disk-offline-repair)
+attaches the encrypted disk when creating the rescue VM.
+
 Locally encrypted or unidentified encrypted recovery partitions are refused
 before ADE unlocking. Unlocking ADE or removing its extension does not decrypt
 the disks. Server-side encryption and encryption at host are not ADE.
