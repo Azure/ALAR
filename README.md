@@ -47,7 +47,7 @@ The correct setup allows you to see the `GRUB Menu` as well get access to the sy
 #### nvme
 This action prepares the attached Linux guest for NVMe. ADE-encrypted VMs are
 not eligible, including VMs with ADE only on data disks.
-It preserves the original Linux script's checks and conditional fixes: built-in
+It performs Linux checks and conditional fixes: built-in
 and initramfs driver detection, NVMe/Hyper-V PCI driver preparation,
 `nvme_core.io_timeout=240`, optional BLS updates, fallback Azure NVMe udev rules,
 and SCSI-to-UUID fstab conversion. Existing ready configurations are skipped.
@@ -60,6 +60,11 @@ SLES, Oracle Linux, Azure Linux and Mariner. It uses installed guest kernels
 rather than the running rescue kernel. Live udev reload is deferred to the guest's
 next boot. Script coverage does not guarantee that every image or VM size supports
 NVMe.
+
+Each installed guest kernel must have the actual NVMe PCI and Hyper-V PCI drivers
+built in or present in its boot image. Missing images, failed inspections/rebuilds
+and unresolved repair failures stop the action; ALAR cleans up before returning
+the failure. A driver directory or `nvme-core` alone is not sufficient.
 
 On RHEL/CentOS 7, a standalone EFI configuration selected by `/etc/grub2-efi.cfg`
 is checked and regenerated at that actual target. Every kernel entry must have
@@ -82,8 +87,10 @@ Mappings can name whole disks or individual partitions. Use only independently
 identified attached guest devices, not rescue OS devices. For example, with the
 map saved on the rescue VM as `/tmp/nvme-device-map`, run
 `ALAR_NVME_DEVICE_MAP=/tmp/nvme-device-map alar nvme`.
-Unresolved devices are left unchanged with a warning; the action does not guess
-that an old guest device name still identifies the same disk on the rescue VM.
+Multi-letter device names such as `/dev/sdaa1` are supported. If any legacy entry
+cannot be resolved, the original fstab remains unchanged and the action fails.
+The action does not guess that an old guest device name still identifies the
+same disk on the rescue VM.
 The original fstab backup remains `/etc/fstab.bak`.
 
 Run `alar nvme` directly. No external CLI command or eligibility report is

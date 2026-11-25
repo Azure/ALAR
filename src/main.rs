@@ -116,7 +116,14 @@ fn main() -> Result<()> {
     } else {
         for action_name in cli_info.actions.split(',') {
             debug!("Running action script: {}", action_name.trim());
-            action::run_repair_script(action_name.trim())?;
+            if let Err(e) = action::run_repair_script(action_name.trim()) {
+                if nvme::is_requested(action_name) {
+                    error!("NVMe preparation failed: {e:#}");
+                    mount::umount(constants::RESCUE_ROOT, true)?;
+                    helper::cleanup(&distro, &cli_info)?;
+                }
+                return Err(e);
+            }
         }
     }
 
