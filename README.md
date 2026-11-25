@@ -45,9 +45,8 @@ This action enables both the serialconsole and the GRUB serial. Incorrect vaules
 The correct setup allows you to see the `GRUB Menu` as well get access to the system via the `Azure Serial Console`.
 
 #### nvme
-This action prepares the attached Linux guest for NVMe using the Linux preparation
-logic from the Azure CLI `nvme-conversion` extension. ADE-encrypted VMs are not
-eligible, including VMs with ADE only on data disks.
+This action prepares the attached Linux guest for NVMe. ADE-encrypted VMs are
+not eligible, including VMs with ADE only on data disks.
 It preserves the original Linux script's checks and conditional fixes: built-in
 and initramfs driver detection, NVMe/Hyper-V PCI driver preparation,
 `nvme_core.io_timeout=240`, optional BLS updates, fallback Azure NVMe udev rules,

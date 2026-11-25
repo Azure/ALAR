@@ -3,8 +3,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the terms found in the LICENSE file in the root of this source tree.
 
-# Linux script from the nvme-conversion CLI extension, with offline guest
-# kernel/device resolution and fix-only behavior for ALAR.
+# Prepare a Linux guest for NVMe with offline kernel/device resolution.
+# Fix-only action for ALAR.
 
 guest_kernel_version() {
     printf '%s\n' "$guest_kernel"
@@ -168,7 +168,7 @@ check_azure_vm_utils() {
 # Provides: io_timeout=240s, /dev/disk/azure/root, /dev/disk/azure/data/by-lun/N
 # Does NOT provide: by-name, by-serial, by-index (those require azure-nvme-id binary)
 # Named 99- so that 80-azure-disk.rules takes precedence if azure-vm-utils is later installed.
-_FALLBACK_UDEV_RULE='# Fallback Azure NVMe udev rules (installed by az nvme-conversion)
+_FALLBACK_UDEV_RULE='# Fallback Azure NVMe udev rules (installed by ALAR)
 # Remove this file after installing azure-vm-utils (which provides 80-azure-disk.rules)
 ACTION!="add|change", GOTO="azure_nvme_fallback_end"
 SUBSYSTEM!="block", GOTO="azure_nvme_fallback_end"
