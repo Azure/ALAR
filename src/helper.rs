@@ -359,6 +359,12 @@ fn write_builtin_action_scripts() -> Result<()> {
     .context("Writing kernel-impl.sh failed")?;
 
     fs::write(
+        format!("{}/{}", constants::ACTION_IMPL_DIR, "nvme-impl.sh"),
+        constants::NVME_IMPL_FILE,
+    )
+    .context("Writing nvme-impl.sh failed")?;
+
+    fs::write(
         format!("{}/{}", constants::ACTION_IMPL_DIR, "safe-exit.sh"),
         constants::SAFE_EXIT_FILE,
     )

@@ -33,6 +33,7 @@ pub(crate) static HELPERS_SH_FILE: &str =  include_str!("action_implementation/h
 pub(crate) static HELPERS_PY_FILE: &str =  include_str!("action_implementation/helpers.py");
 pub(crate) static INITRD_IMPL_FILE: &str =  include_str!("action_implementation/initrd-impl.sh");
 pub(crate) static KERNEL_IMPL_FILE: &str =  include_str!("action_implementation/kernel-impl.sh");
+pub(crate) static NVME_IMPL_FILE: &str =  include_str!("action_implementation/nvme-impl.sh");
 pub(crate) static SAFE_EXIT_FILE: &str =  include_str!("action_implementation/safe-exit.sh");
 pub(crate) static SERIALCONSOLE_IMPL_FILE: &str =  include_str!("action_implementation/serialconsole-impl.sh");
 pub(crate) static TEST_IMPL_FILE: &str =  include_str!("action_implementation/test-impl.sh");
