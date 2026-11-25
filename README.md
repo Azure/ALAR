@@ -92,16 +92,11 @@ running the script without arguments. Check-only and dry-run modes are not
 supported; no additional flags are added to ALAR's CLI.
 
 **Known framework limitation:** some Oracle Linux disk layouts are classified as
-ADE-encrypted before ALAR reaches the action. Oracle Linux 8.10, 9.8 and 9.7 passed
-full action/conversion testing with a separate temporary framework patch, but
-that patch was reverted and is not included here. Those results do not mean the
-unchanged framework can process those layouts. Genuine ADE credential recovery
-and reliable post-conversion SSH connectivity are not certified by these tests.
+ADE-encrypted before ALAR reaches the action. This action does not change disk
+discovery or ADE handling and cannot bypass that limitation.
 
-The original fix-path diagnostic and exit behavior is preserved: review the action output,
-not just ALAR's exit status, when evaluating preparation results.
-The [NVMe test guide](tests/nvme/README.md) documents the self-contained regression
-suite, optional shared-source comparisons, completed live coverage and limits.
+The original fix-path diagnostic and exit behavior is preserved: review the
+action output, not just ALAR's exit status, when evaluating preparation results.
 
 #### grubfix
 This action is reinstalling `GRUB` and regenerates the `grub.cfg` file
