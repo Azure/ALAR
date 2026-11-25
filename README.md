@@ -46,7 +46,8 @@ The correct setup allows you to see the `GRUB Menu` as well get access to the sy
 
 #### nvme
 This action prepares the attached Linux guest for NVMe using the Linux preparation
-logic from the Azure CLI `nvme-conversion` extension. Run it with `alar nvme`.
+logic from the Azure CLI `nvme-conversion` extension. ADE-encrypted VMs are not
+eligible, including VMs with ADE only on data disks.
 It preserves the original Linux script's checks and conditional fixes: built-in
 and initramfs driver detection, NVMe/Hyper-V PCI driver preparation,
 `nvme_core.io_timeout=240`, optional BLS updates, fallback Azure NVMe udev rules,
@@ -86,14 +87,45 @@ Unresolved devices are left unchanged with a warning; the action does not guess
 that an old guest device name still identifies the same disk on the rescue VM.
 The original fstab backup remains `/etc/fstab.bak`.
 
-ALAR always applies the conditional fixes. Within an already prepared guest
-chroot, `bash /tmp/action_implementation/nvme-impl.sh -fix` is equivalent to
-running the script without arguments. Check-only and dry-run modes are not
-supported; no additional flags are added to ALAR's CLI.
+Before recovery, a trusted operator or repair workflow must check the **original
+VM**, not the rescue VM, using the updated `nvme-conversion` extension:
+
+```bash
+az nvme-conversion check -g SOURCE_RG -n SOURCE_VM --controller-type NVMe \
+  --ignore-os-check --ignore-sku-check --ignore-windows-version-check \
+  -o json > nvme-eligibility.json
+```
+
+This performs read-only control-plane checks, not guest preparation. Skipping
+OS/SKU checks does not bypass ADE verification. Preserve the full JSON output
+without a `--query` projection. Transfer it securely to the rescue VM and install
+it as a root-owned regular file that is not writable by group or others:
+
+```bash
+sudo install -m 600 nvme-eligibility.json /root/nvme-eligibility.json
+sudo ALAR_NVME_ELIGIBILITY_FILE=/root/nvme-eligibility.json alar nvme
+```
+
+The report must be no more than 15 minutes old; repeat the source-VM check
+immediately before each invocation. Missing, invalid, failed, incomplete, stale
+or ADE-positive reports stop `nvme` before disk discovery or any repair action,
+including combined invocations such as `alar fstab,nvme`. Locally encrypted or
+unidentified encrypted partitions are also refused before ADE unlocking.
+Unlocking ADE or removing its extension does not decrypt the disks. Server-side
+encryption and encryption at host are not ADE and are not excluded.
+
+The caller is trusted to associate the report with the actual source VM and
+recovery disk and keep that VM's disk/encryption configuration unchanged during
+the operation. The report is a private workflow handoff, not a signed Azure
+attestation; ALAR cannot infer VM-wide encryption state from an offline disk.
+Use `alar nvme` for the eligibility gate, not the internal action script directly.
+The internal payload retains equivalent default/`-fix` behavior, with no check
+or dry-run modes. No new ALAR CLI flags or Azure API dependencies are added.
 
 **Known framework limitation:** some Oracle Linux disk layouts are classified as
-ADE-encrypted before ALAR reaches the action. This action does not change disk
-discovery or ADE handling and cannot bypass that limitation.
+ADE-encrypted before ALAR reaches the action. Those layouts remain refused;
+this change does not replace the classifier or alter ADE recovery for other
+actions.
 
 The original fix-path diagnostic and exit behavior is preserved: review the
 action output, not just ALAR's exit status, when evaluating preparation results.

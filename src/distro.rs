@@ -882,6 +882,14 @@ impl Distro {
             &partition_details
         );
 
+        if let Err(e) = crate::nvme::ensure_not_ade(
+            &cli_info.actions,
+            partition_details.iter().any(|part| part.fstype.starts_with("crypt")),
+        ) {
+            error!("NVMe eligibility rejected: {e:#}");
+            process::exit(1);
+        }
+
         // at this point is is still not determined whether, if the fs_type is crypt, the disk needs to manually decrypted
         if Self::is_fs_crypt_detected(&partition_details) {
             /*
