@@ -1,4 +1,4 @@
-"""Seven regressions for ALAR's offline guest-kernel and device-map adapters.
+"""Regressions for ALAR's fix-only interface and offline guest adapters.
 
 Run through unittest discovery as Linux root with the same copied-tool/chroot
 prerequisites as run_tests.py. Other hosts skip this class, not certify it.
@@ -15,7 +15,7 @@ import sys
 import tempfile
 import unittest
 
-from run_tests import Case, fixture, prepare_base, write
+from run_tests import Case, fixture, prepare_base, snapshot, write
 
 
 @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'Linux root required for isolated chroot fixtures')
@@ -110,6 +110,37 @@ class OfflineTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('[ERROR] No installed guest kernels', result.stdout)
         self.assertEqual(self.log(), '')
+
+    def test_explicit_fix_matches_default(self):
+        """The optional fix flag and normal ALAR invocation must make identical repairs."""
+        self.prepare()
+        explicit = Path(self.directory.name) / 'explicit'
+        shutil.copytree(self.root, explicit)
+        default_result = self.run_action()
+        explicit_result = subprocess.run(
+            ['/usr/sbin/chroot', str(explicit), '/bin/bash', '/run.sh', '-fix'],
+            env={'PATH': '/bin', 'ALAR_NVME_DEVICE_MAP': '/device-map'},
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(default_result.returncode, 0)
+        self.assertEqual(explicit_result.returncode, 0)
+        self.assertEqual(default_result.stdout, explicit_result.stdout)
+        self.assertEqual(default_result.stderr, explicit_result.stderr)
+        self.assertEqual(snapshot(self.root, False), snapshot(explicit, False))
+        self.assertIn('UUID=swap-uuid none swap', (explicit / 'etc/fstab').read_text())
+
+    def test_removed_modes_fail_before_any_changes(self):
+        """Removed flags must fail explicitly, never fall through into a repair."""
+        self.prepare()
+        before = snapshot(self.root, False)
+        for arguments in (['-check'], ['-dryrun'], ['-check', '-fix'], ['-fix', '-dryrun']):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ['/usr/sbin/chroot', str(self.root), '/bin/bash', '/run.sh', *arguments],
+                    env={'PATH': '/bin'}, capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('Usage: /run.sh [-fix]', result.stdout)
+                self.assertEqual(before, snapshot(self.root, False))
+                self.assertEqual(self.log(), '')
 
 
 if __name__ == '__main__':

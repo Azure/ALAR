@@ -1,4 +1,4 @@
-"""Five regressions for fixture validity, raw evidence and interpreter copying.
+"""Regressions for fix-only fixtures, raw evidence and interpreter copying.
 
 Run with unittest discovery as Linux root and existing chroot/userspace tools.
 Other hosts skip this class; that is not guest acceptance. Tests reject equally
@@ -16,7 +16,7 @@ import sys
 import tempfile
 import unittest
 
-from run_tests import Case, compare, copy_tool, prepare_base, write
+from run_tests import Case, compare, copy_tool, matrix, prepare_base, write
 
 
 @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'Linux root required for isolated fixtures')
@@ -28,9 +28,9 @@ class RunnerTests(unittest.TestCase):
             parent = Path(directory)
             prepare_base(parent / 'base')
             script = 'echo standard-output; echo standard-error >&2\n'
-            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'check'), script, script, parent / 'review')
+            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'fix', 'no-fstab-changes'), script, script, parent / 'review')
             self.assertEqual(result['status'], 'passed')
-            evidence = json.loads((parent / 'review/ubuntu/ready/check/normal.json').read_text())
+            evidence = json.loads((parent / 'review/ubuntu/ready/fix/no-fstab-changes.json').read_text())
             self.assertFalse(evidence['boot_evidence'])
             self.assertEqual(len(evidence['phases']), 2)
             for phase in evidence['phases']:
@@ -45,9 +45,9 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='alar-failed-evidence-') as directory:
             parent = Path(directory)
             prepare_base(parent / 'base')
-            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'check'), 'if then\n', 'if then\n', parent / 'review')
+            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'fix'), 'if then\n', 'if then\n', parent / 'review')
             self.assertEqual(result['status'], 'failed')
-            evidence = json.loads((parent / 'review/ubuntu/ready/check/normal.json').read_text())
+            evidence = json.loads((parent / 'review/ubuntu/ready/fix/normal.json').read_text())
             self.assertEqual(evidence['phases'][0]['returncode'], 2)
             self.assertEqual(evidence['result']['status'], 'failed')
 
@@ -56,7 +56,7 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='alar-equal-errors-') as directory:
             parent = Path(directory)
             prepare_base(parent / 'base')
-            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'check'), 'if then\n', 'if then\n')
+            result = compare(parent / 'base', parent, Case('ubuntu', 'ready', 'fix'), 'if then\n', 'if then\n')
             self.assertEqual(result['status'], 'failed')
             self.assertIn('Unexpected script exit 2', result['error'])
 
@@ -85,6 +85,13 @@ class RunnerTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, 'copied-interpreter')
+
+    def test_matrix_only_contains_fix_and_invalid_input(self):
+        """Retain every fix scenario without advertising removed modes."""
+        cases = matrix()
+        self.assertEqual(len(cases), 65)
+        self.assertEqual(len({case.name for case in cases}), 65)
+        self.assertEqual({case.mode for case in cases}, {'fix', 'invalid'})
 
 
 if __name__ == '__main__':

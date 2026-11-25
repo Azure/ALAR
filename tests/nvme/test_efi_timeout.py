@@ -27,7 +27,7 @@ class EfiTimeoutTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[2]
         cls.scripts = ((repo / 'src/action_implementation/nvme-impl.sh').read_text(),)
 
-    def run_case(self, script, mode='fix', version='7.9', efi=True, ready=False,
+    def run_case(self, script, version='7.9', efi=True, ready=False,
                  token='', broken=False, redirect=False, failure=False, missing_defaults=False, silent_failure=False, other_kernel_missing=False):
         """Run actual function definitions against synthetic boot entries and logged rebuilds."""
         temporary = tempfile.TemporaryDirectory(dir=self.tmp.name)
@@ -51,12 +51,8 @@ class EfiTimeoutTests(unittest.TestCase):
         (root / 'bin/grub2-mkconfig').chmod(0o755)
         write(root, 'commands.log', '')
         write(root, 'dev/null', '')
-        for directory in ('tmp/staging/original', 'tmp/staging/modified', 'tmp/staging/diffs'):
-            (root / directory).mkdir(parents=True, exist_ok=True)
         functions = '\n\n'.join(re.findall(r'^(?:nvme_timeout_entries_ready|set_rhel7_timeout_defaults|check_nvme_timeout)\(\) \{\n.*?^\}', script, re.MULTILINE | re.DOTALL))
-        write(root, 'run.sh', functions + '\ndistro=rhel\nfix=' + ('false' if mode == 'check' else 'true')
-              + '\ndry_run=' + ('true' if mode == 'dryrun' else 'false')
-              + '\nstaging_dir=/tmp/staging\ncheck_nvme_timeout\n')
+        write(root, 'run.sh', functions + '\ndistro=rhel\ncheck_nvme_timeout\n')
         before = {str(path.relative_to(root)): path.read_bytes() for path in (root / 'boot').rglob('*') if path.is_file()}
         result = subprocess.run(['/usr/sbin/chroot', str(root), '/bin/bash', '/run.sh'],
                                 env={'PATH': '/bin'}, text=True, capture_output=True, timeout=30)
@@ -68,9 +64,11 @@ class EfiTimeoutTests(unittest.TestCase):
 
     def test_stale_efi_is_not_ready_from_defaults_or_other_config(self):
         """The exact live failure must not report readiness from the wrong files."""
-        for root, result, _ in self.each_source(mode='check'):
-            self.assertIn('[ERROR] nvme_core.io_timeout is not set to 240.', result.stdout)
+        for root, result, _ in self.each_source():
+            self.assertEqual(result.returncode, 0)
+            self.assertIn('[WARNING] nvme_core.io_timeout is not set to 240.', result.stdout)
             self.assertNotIn('[INFO] nvme_core.io_timeout is set to 240.', result.stdout)
+            self.assertIn('grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg', (root/'commands.log').read_text())
 
     def test_fix_rebuilds_standalone_efi_without_duplicate_default_argument(self):
         """Repair the proven standalone EFI target even when desired defaults already have 240."""
@@ -90,16 +88,11 @@ class EfiTimeoutTests(unittest.TestCase):
     def test_partial_or_wrong_argument_is_not_ready(self):
         """2400 and a conflicting timeout must not be accepted as 240."""
         for token in ('nvme_core.io_timeout=2400', 'nvme_core.io_timeout=240 nvme_core.io_timeout=30'):
-            for root, result, _ in self.each_source(mode='check', token=token):
-                self.assertIn('[ERROR] nvme_core.io_timeout is not set to 240.', result.stdout)
-
-    def test_dryrun_does_not_change_boot_files(self):
-        """Stage defaults and target diagnostics without rebuilding real fixture files."""
-        for root, result, before in self.each_source(mode='dryrun'):
-            after = {str(path.relative_to(root)): path.read_bytes() for path in (root/'boot').rglob('*') if path.is_file()}
-            self.assertEqual(before, after)
-            self.assertIn('/boot/efi/EFI/redhat/grub.cfg', result.stdout)
-            self.assertNotIn('grub2-mkconfig', (root/'commands.log').read_text())
+            for root, result, _ in self.each_source(token=token):
+                self.assertEqual(result.returncode, 0)
+                self.assertIn('[WARNING] nvme_core.io_timeout is not set to 240.', result.stdout)
+                self.assertEqual((root/'boot/efi/EFI/redhat/grub.cfg').read_text().count('nvme_core.io_timeout='), 1)
+                self.assertIn('nvme_core.io_timeout=240 ', (root/'boot/efi/EFI/redhat/grub.cfg').read_text())
 
     def test_broken_efi_target_is_explicit_error(self):
         """A broken configured EFI link must not fall through to false readiness."""
@@ -142,8 +135,10 @@ class EfiTimeoutTests(unittest.TestCase):
 
     def test_every_standalone_kernel_entry_requires_timeout(self):
         """One ready entry cannot mask an older kernel without the required flag."""
-        for root, result, _ in self.each_source(mode='check', token='nvme_core.io_timeout=240', other_kernel_missing=True):
-            self.assertIn('[ERROR] nvme_core.io_timeout is not set to 240.', result.stdout)
+        for root, result, _ in self.each_source(token='nvme_core.io_timeout=240', other_kernel_missing=True):
+            self.assertEqual(result.returncode, 0)
+            self.assertIn('[WARNING] nvme_core.io_timeout is not set to 240.', result.stdout)
+            self.assertIn('grub2-mkconfig', (root/'commands.log').read_text())
 
     def test_successful_generator_without_repair_is_rejected(self):
         """An exit-zero generator that leaves stale EFI entries is not a successful fix."""

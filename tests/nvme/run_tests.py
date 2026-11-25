@@ -1,4 +1,4 @@
-"""Compare Linux NVMe preparation logic in parallel, isolated chroot fixtures.
+"""Compare fix-only Linux NVMe preparation in parallel, isolated chroot fixtures.
 
 Requires Linux root, Python 3.10+ and existing userspace tools. The extension's
 literal _LINUX_SCRIPT is read with AST, never imported. Reference and candidate
@@ -220,13 +220,12 @@ def fixture(base: Path, root: Path, case: Case, script: str, original: bool) -> 
 
 
 def normalized(text: str) -> str:
-    """Remove only declared offline diagnostics, diff timestamps and check-flag usage.
+    """Remove only declared offline diagnostics and unsupported reference usage flags.
 
     Use this for comparisons, never for the retained raw stdout/stderr evidence.
     """
     text = re.sub(r'^\[INFO\] Offline guest:.*\n|^\[WARNING\] Cannot map guest device .*\n', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^(--- |\+\+\+ )([^\t\n]+)\t[^\n]*', r'\1\2', text, flags=re.MULTILINE)
-    return text.replace('[-check] ', '')
+    return text.replace('[-check] ', '').replace(' [-dryrun]', '')
 
 
 def snapshot(root: Path, normalize_content: bool = True) -> dict[str, tuple[int, str]]:
@@ -247,7 +246,7 @@ def compare(base: Path, parent: Path, case: Case, reference: str, action: str,
 
     Each chroot phase has a 60-second timeout and an independently expected exit,
     so equally broken scripts cannot pass by equality alone. Compare normalized
-    output, guest files, BLS arguments, mapping behavior and check/dry-run nonmutation.
+    output, guest files, BLS arguments, mapping behavior and invalid-input nonmutation.
     When evidence_directory is supplied, write a new schema-version-1 trace with
     raw streams, commands and literal snapshots, including caught partial failures.
     Existing evidence files are rejected rather than overwritten.
@@ -263,8 +262,7 @@ def compare(base: Path, parent: Path, case: Case, reference: str, action: str,
                 fixture(base, root, case, script, original=index == 0)
                 before = {name: value for name, value in snapshot(root).items() if not name.startswith('tmp/')}
                 args = {'fix': ['-fix'] if index == 0 else [],
-                        'check': [] if index == 0 else ['-check'],
-                        'dryrun': ['-dryrun'], 'invalid': ['-invalid']}[case.mode]
+                        'invalid': ['-invalid']}[case.mode]
                 command = ['/usr/sbin/chroot', str(root), '/bin/bash', '/run.sh', *args]
                 phase: dict[str, object] = {'script': 'original' if index == 0 else 'candidate',
                                            'command': command, 'before': snapshot(root, False)}
@@ -279,14 +277,14 @@ def compare(base: Path, parent: Path, case: Case, reference: str, action: str,
                     raise AssertionError(f'Unexpected script exit {result.returncode}; expected {expected_exit}: '
                                          f'{result.stdout}{result.stderr}')
                 outputs.append((result.returncode, normalized(result.stdout + result.stderr)))
-                if case.mode in ('check', 'dryrun'):
+                if case.mode == 'invalid' or case.scenario == 'no-release':
                     after = {name: value for name, value in snapshot(root).items() if not name.startswith('tmp/')}
                     if before != after:
-                        raise AssertionError(f'{case.mode} modified protected guest files')
+                        raise AssertionError('Invalid input modified protected guest files')
             if outputs[0] != outputs[1]:
                 raise AssertionError(f'Original output: {outputs[0]}\nCandidate output: {outputs[1]}')
             if snapshot(roots[0]) != snapshot(roots[1]):
-                raise AssertionError('Guest configuration, image or dry-run artifacts differ')
+                raise AssertionError('Guest configuration or image contents differ')
             if (roots[0] / 'bls-args').read_bytes() != (roots[1] / 'bls-args').read_bytes():
                 raise AssertionError('BLS arguments differ')
             log = (roots[1] / 'commands.log').read_text()
@@ -311,30 +309,29 @@ def compare(base: Path, parent: Path, case: Case, reference: str, action: str,
 
 
 def matrix() -> list[Case]:
-    """Return the 191 distro/driver/mode/fallback/error regression cases."""
-    cases = [Case(distro, state, mode) for distro in DISTROS
-             for state in ('missing', 'ready', 'builtin') for mode in ('fix', 'check', 'dryrun')]
-    cases += [Case(distro, state, mode) for distro in ('ubuntu', 'rhel')
-              for state in ('no-hvpci', 'no-nvme') for mode in ('fix', 'check', 'dryrun')]
+    """Return 65 fix-mode, release-detection, fallback and error cases."""
+    cases = [Case(distro, state, 'fix') for distro in DISTROS
+             for state in ('missing', 'ready', 'builtin')]
+    cases += [Case(distro, state, 'fix') for distro in ('ubuntu', 'rhel')
+              for state in ('no-hvpci', 'no-nvme')]
     scenarios = ('no-grubby', 'bls-ready', 'defaults-ready', 'grub2-ready', 'grub-ready',
                  'utils-missing-rules', 'utils-etc', 'utils-lib', 'utils-usrlib', 'fallback-ready',
                  'no-grub-file', 'failed-rebuild', 'fail-dracut', 'fail-grub', 'no-fstab-changes')
-    cases += [Case('rhel', 'missing', mode, scenario) for scenario in scenarios for mode in ('fix', 'check', 'dryrun')]
-    cases += [Case('ubuntu', 'missing', mode, scenario) for scenario in ('failed-rebuild', 'fail-update') for mode in ('fix', 'check', 'dryrun')]
-    cases += [Case('ignored', 'missing', mode, f'legacy-{release}')
-              for release in ('debian_version', 'SuSE-release', 'redhat-release', 'centos-release', 'rocky-release')
-              for mode in ('fix', 'check', 'dryrun')]
-    cases += [Case('arch', 'missing', mode) for mode in ('fix', 'check', 'dryrun')]
+    cases += [Case('rhel', 'missing', 'fix', scenario) for scenario in scenarios]
+    cases += [Case('ubuntu', 'missing', 'fix', scenario) for scenario in ('failed-rebuild', 'fail-update')]
+    cases += [Case('ignored', 'missing', 'fix', f'legacy-{release}')
+              for release in ('debian_version', 'SuSE-release', 'redhat-release', 'centos-release', 'rocky-release')]
+    cases += [Case('arch', 'missing', 'fix')]
     return cases + [Case('ignored', 'missing', 'fix', 'no-release'), Case('ubuntu', 'missing', 'invalid')]
 
 
 def verify_functions(reference: str, action: str) -> None:
-    """Reject changes beyond declared offline adapters in original shell functions.
+    """Verify unchanged timeout helpers/rules and required repair entrypoints.
 
-    Compare original and shared timeout helper function bodies and the complete fallback udev rule literally,
-    allowing only the named guest-kernel/device/udev/usage adaptations.
+    Repair functions have intentionally lost their non-fix branches; compare
+    their behavior through fixtures, not a claim of literal source identity.
     """
-    for name in ('setup_dryrun', 'usage', 'check_azure_vm_utils', '_install_fallback_udev_rules',
+    for name in ('check_azure_vm_utils', '_install_fallback_udev_rules',
                  'check_nvme_driver', 'nvme_timeout_entries_ready', 'set_rhel7_timeout_defaults',
                  'check_nvme_timeout', 'check_fstab'):
         bodies = []
@@ -344,12 +341,8 @@ def verify_functions(reference: str, action: str) -> None:
                 raise ValueError(f'Missing original function: {name}')
             bodies.append('\n'.join(line for line in match[0].splitlines()
                                     if not line.lstrip().startswith('#') and 'echo "Usage:' not in line))
-        expected = bodies[0].replace('uname -r', 'guest_kernel_version').replace('modinfo nvme', 'modinfo -k "$guest_kernel" nvme')
-        expected = expected.replace('blkid "$device"', 'guest_blkid "$device"').replace(
-            'udevadm control --reload-rules 2>/dev/null || true',
-            'echo "[INFO] Offline guest: udev rules will load at the next boot."')
-        if expected != bodies[1]:
-            raise ValueError(f'Original function differs beyond offline adapters: {name}')
+        if name in ('nvme_timeout_entries_ready', 'set_rhel7_timeout_defaults') and bodies[0] != bodies[1]:
+            raise ValueError(f'Shared timeout helper differs: {name}')
     rules = [re.search(r"^_FALLBACK_UDEV_RULE=.*?^LABEL=.*?'$", text, re.MULTILINE | re.DOTALL) for text in (reference, action)]
     if any(rule is None for rule in rules) or [rule[0] for rule in rules if rule is not None][0] != [rule[0] for rule in rules if rule is not None][1]:
         raise ValueError('Fallback udev rules differ')
@@ -389,7 +382,7 @@ def main() -> int:
     verify_functions(reference, action)
     report.parent.mkdir(parents=True, exist_ok=True)
     with report.open('x', encoding='utf-8') as stream:
-        json.dump({'schema_version': 1, 'status': 'incomplete', 'mode': 'offline-fixtures'}, stream)
+        json.dump({'schema_version': 2, 'status': 'incomplete', 'mode': 'offline-fix-fixtures'}, stream)
     if evidence is not None:
         evidence.mkdir(parents=True, exist_ok=False)
         (evidence / 'original-linux-script.sh').write_text(reference, encoding='utf-8')
@@ -406,9 +399,10 @@ def main() -> int:
                 if result['status'] == 'failed':
                     print(f"FAIL {result['case']}: {result['error']}", file=sys.stderr)
     failed = sum(result['status'] == 'failed' for result in results)
-    document = {'schema_version': 1, 'status': 'completed', 'mode': 'offline-fixtures', 'completed_at': datetime.now(timezone.utc).isoformat(),
+    document = {'schema_version': 2, 'status': 'completed', 'mode': 'offline-fix-fixtures', 'completed_at': datetime.now(timezone.utc).isoformat(),
                 'workers': args.jobs, 'total': len(results), 'passed': len(results) - failed, 'failed': failed,
-                'original_functions_match': True, 'action_sha256': hashlib.sha256(action.encode()).hexdigest(),
+                'timeout_helpers_match': True, 'fallback_rules_match': True,
+                'action_sha256': hashlib.sha256(action.encode()).hexdigest(),
                 'reference_sha256': hashlib.sha256(reference.encode()).hexdigest(), 'results': sorted(results, key=lambda row: row['case']),
                 'evidence_directory': str(evidence) if evidence is not None else None,
                 'execution_host': {'wsl_distribution': os.environ.get('WSL_DISTRO_NAME'), 'python': sys.version,

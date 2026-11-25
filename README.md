@@ -86,11 +86,10 @@ Unresolved devices are left unchanged with a warning; the action does not guess
 that an old guest device name still identifies the same disk on the rescue VM.
 The original fstab backup remains `/etc/fstab.bak`.
 
-ALAR defaults to applying fixes. Within an already prepared guest chroot, the
-script also supports `bash /tmp/action_implementation/nvme-impl.sh -check` for
-the original check-only behavior and `bash /tmp/action_implementation/nvme-impl.sh -dryrun`
-for the original staged changes, diffs and summary under `/tmp/nvme-conversion-dryrun/`.
-These script modes do not add arguments to ALAR's CLI.
+ALAR always applies the conditional fixes. Within an already prepared guest
+chroot, `bash /tmp/action_implementation/nvme-impl.sh -fix` is equivalent to
+running the script without arguments. Check-only and dry-run modes are not
+supported; no additional flags are added to ALAR's CLI.
 
 **Known framework limitation:** some Oracle Linux disk layouts are classified as
 ADE-encrypted before ALAR reaches the action. Oracle Linux 8.10, 9.8 and 9.7 passed
@@ -99,7 +98,7 @@ that patch was reverted and is not included here. Those results do not mean the
 unchanged framework can process those layouts. Genuine ADE credential recovery
 and reliable post-conversion SSH connectivity are not certified by these tests.
 
-The original diagnostic and exit behavior is preserved: review the action output,
+The original fix-path diagnostic and exit behavior is preserved: review the action output,
 not just ALAR's exit status, when evaluating preparation results.
 The [NVMe test guide](tests/nvme/README.md) documents the self-contained regression
 suite, optional shared-source comparisons, completed live coverage and limits.
