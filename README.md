@@ -87,38 +87,28 @@ Unresolved devices are left unchanged with a warning; the action does not guess
 that an old guest device name still identifies the same disk on the rescue VM.
 The original fstab backup remains `/etc/fstab.bak`.
 
-Before recovery, a trusted operator or repair workflow must check the **original
-VM**, not the rescue VM, using the updated `nvme-conversion` extension:
+Run `alar nvme` directly. No external CLI command or eligibility report is
+required.
 
-```bash
-az nvme-conversion check -g SOURCE_RG -n SOURCE_VM --controller-type NVMe \
-  --ignore-os-check --ignore-sku-check --ignore-windows-version-check \
-  -o json > nvme-eligibility.json
-```
+NVMe is refused before any requested repair when ADE credentials, an attached
+`BEK VOLUME`, an existing recovery-key file or an unlocked ADE mapping is found
+on the rescue VM. A BEK supplied by an ADE-aware repair workflow is also a
+positive signal for data-disk-only ADE, even if the recovered OS disk is
+plaintext. Detection uses volume/path metadata only: it does not mount the BEK
+disk or read key contents. Probe failures also refuse NVMe rather than assume
+that no key is present.
 
-This performs read-only control-plane checks, not guest preparation. Skipping
-OS/SKU checks does not bypass ADE verification. Preserve the full JSON output
-without a `--query` projection. Transfer it securely to the rescue VM and install
-it as a root-owned regular file that is not writable by group or others:
+Locally encrypted or unidentified encrypted recovery partitions are refused
+before ADE unlocking. Unlocking ADE or removing its extension does not decrypt
+the disks. Server-side encryption and encryption at host are not ADE.
 
-```bash
-sudo install -m 600 nvme-eligibility.json /root/nvme-eligibility.json
-sudo ALAR_NVME_ELIGIBILITY_FILE=/root/nvme-eligibility.json alar nvme
-```
+An offline disk alone cannot establish the state of unattached data disks.
+BEK absence is not universal proof that the original VM is ADE-free, especially
+in manual recovery where keys were not attached. The repair workflow/operator
+must still ensure the source VM has no ADE on OS or data disks. Other actions'
+ADE behavior is unchanged. Use `alar nvme`, not the internal action script
+directly, for these local safeguards.
 
-The report must be no more than 15 minutes old; repeat the source-VM check
-immediately before each invocation. Missing, invalid, failed, incomplete, stale
-or ADE-positive reports stop `nvme` before disk discovery or any repair action,
-including combined invocations such as `alar fstab,nvme`. Locally encrypted or
-unidentified encrypted partitions are also refused before ADE unlocking.
-Unlocking ADE or removing its extension does not decrypt the disks. Server-side
-encryption and encryption at host are not ADE and are not excluded.
-
-The caller is trusted to associate the report with the actual source VM and
-recovery disk and keep that VM's disk/encryption configuration unchanged during
-the operation. The report is a private workflow handoff, not a signed Azure
-attestation; ALAR cannot infer VM-wide encryption state from an offline disk.
-Use `alar nvme` for the eligibility gate, not the internal action script directly.
 The internal payload retains equivalent default/`-fix` behavior, with no check
 or dry-run modes. No new ALAR CLI flags or Azure API dependencies are added.
 

@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     }
 
     if let Err(e) = nvme::ensure_not_ade(&cli_info.actions, !cli_info.ade_password.is_empty())
-        .and_then(|_| nvme::validate_source_eligibility(&cli_info.actions))
+        .and_then(|_| nvme::ensure_no_rescue_ade_context(&cli_info.actions))
     {
         error!("NVMe eligibility rejected: {e:#}");
         process::exit(1);
