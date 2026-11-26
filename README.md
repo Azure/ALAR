@@ -61,6 +61,12 @@ rather than the running rescue kernel. Live udev reload is deferred to the guest
 next boot. Script coverage does not guarantee that every image or VM size supports
 NVMe.
 
+Guest kernel releases come from installed kernel package file lists and guest
+boot images/configuration. A module-only directory, such as an older directory
+populated by RHEL's `kmod-kvdo`, is not treated as another installed kernel.
+Package-query failures stop preparation; missing images for genuine installed
+or boot-referenced kernels are not silently skipped.
+
 Each installed guest kernel must have the actual NVMe PCI and Hyper-V PCI drivers
 built in or present in its boot image. Missing images, failed inspections/rebuilds
 and unresolved repair failures stop the action; ALAR cleans up before returning

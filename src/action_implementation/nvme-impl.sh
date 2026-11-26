@@ -135,16 +135,91 @@ else
 fi
 echo "[INFO] Operating system detected: $distro"
 
-# uname reports the rescue kernel even inside a chroot. Check the original
-# driver logic against every installed guest kernel instead.
-guest_kernels=()
-for modules_dir in /lib/modules/*; do
-    [ -d "$modules_dir" ] && guest_kernels+=("${modules_dir##*/}")
-done
-if [ "${#guest_kernels[@]}" -eq 0 ]; then
-    echo "[ERROR] No installed guest kernels found in /lib/modules."
-    exit 1
-fi
+# Module packages can populate an older /lib/modules directory without
+# installing that kernel. Package file lists also retain missing boot images.
+collect_guest_kernels() {
+    local image_files packages status package files config field image rest kernel existing duplicate
+    case "$distro" in
+        ubuntu|debian)
+            if ! packages=$(dpkg-query -W -f '${db:Status-Status} ${binary:Package}\n' 'linux-image-*' 2>&1); then
+                echo "[ERROR] Cannot query installed guest kernel packages: $packages" >&2
+                return 1
+            fi
+            image_files=""
+            while read -r status package; do
+                [ "$status" = installed ] || continue
+                if ! files=$(dpkg-query -L "$package" 2>&1); then
+                    echo "[ERROR] Cannot query guest kernel files for $package: $files" >&2
+                    return 1
+                fi
+                image_files+=$'\n'"$files"
+            done <<< "$packages"
+            ;;
+        *)
+            if ! image_files=$(rpm -qa --qf '[%{FILENAMES}\n]' 'kernel*' 2>&1); then
+                echo "[ERROR] Cannot query installed guest kernel files: $image_files" >&2
+                return 1
+            fi
+            ;;
+    esac
+    for image in /boot/vmlinuz-* /boot/vmlinux-* /lib/modules/*/vmlinuz /usr/lib/modules/*/vmlinuz; do
+        [ -f "$image" ] && image_files+=$'\n'"$image"
+    done
+    for config in /boot/grub/grub.cfg /boot/grub2/grub.cfg /etc/grub2-efi.cfg /boot/loader/entries/*.conf; do
+        [ -f "$config" ] || continue
+        if [ ! -r "$config" ]; then
+            echo "[ERROR] Cannot read guest boot configuration: $config" >&2
+            return 1
+        fi
+        while read -r field image rest || [ -n "$field" ]; do
+            case "$field" in
+                linux|linuxefi|linux16)
+                    image_files+=$'\n'"/boot/${image##*/}"
+                    ;;
+            esac
+        done < "$config"
+    done
+    guest_kernels=()
+    while IFS= read -r image; do
+        image="${image#\"}"
+        image="${image%\"}"
+        image="${image#\'}"
+        image="${image%\'}"
+        case "$image" in
+            /lib/modules/*/vmlinuz|/usr/lib/modules/*/vmlinuz)
+                kernel="${image%/vmlinuz}"
+                kernel="${kernel##*/}"
+                ;;
+            /boot/vmlinuz-*|/boot/vmlinux-*|/vmlinuz-*|/vmlinux-*)
+                kernel="${image##*/}"
+                kernel="${kernel#*-}"
+                ;;
+            *) continue ;;
+        esac
+        case "$kernel" in
+            ""|0-rescue-*) continue ;;
+        esac
+        if [[ ! "$kernel" =~ ^[a-zA-Z0-9_.+~-]+$ ]]; then
+            echo "[ERROR] Invalid guest kernel release in boot image path: $image" >&2
+            return 1
+        fi
+        if [ ! -d "/lib/modules/$kernel" ]; then
+            echo "[ERROR] No guest module directory found for kernel $kernel." >&2
+            return 1
+        fi
+        duplicate=false
+        for existing in "${guest_kernels[@]}"; do
+            [ "$existing" = "$kernel" ] && duplicate=true && break
+        done
+        $duplicate || guest_kernels+=("$kernel")
+    done <<< "$image_files"
+    if [ "${#guest_kernels[@]}" -eq 0 ]; then
+        echo "[ERROR] No installed or boot-referenced guest kernels found." >&2
+        return 1
+    fi
+}
+
+collect_guest_kernels || exit 1
 # Function to check if azure-vm-utils is installed
 check_azure_vm_utils() {
     echo "[INFO] Checking for azure-vm-utils..."
