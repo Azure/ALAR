@@ -1,13 +1,73 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the terms found in the LICENSE file in the root of this source tree.
 
+use crate::constants;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
+use std::process::Command;
 use log::debug;
 use regex::Regex;
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 use anyhow::anyhow;
 use std::sync::OnceLock;
+
+pub(crate) fn is_requested(actions: &str) -> bool {
+    actions.split(',').any(|action| action.trim().eq_ignore_ascii_case("nvme"))
+}
+
+pub(crate) fn ensure_not_ade(actions: &str, encrypted_or_unknown: bool) -> Result<()> {
+    ensure!(
+        !is_requested(actions) || !encrypted_or_unknown,
+        "NVMe preparation is unsupported with ADE or unidentified encrypted partitions. \
+         Unlocking a disk does not remove ADE."
+    );
+    Ok(())
+}
+
+pub(crate) fn bek_probe_detected(
+    status: Option<i32>, stdout: &[u8], stderr: &[u8],
+) -> Result<bool> {
+    let matched = stdout.iter().any(|byte| !byte.is_ascii_whitespace());
+    match status {
+        Some(0) if matched => Ok(true),
+        Some(2) if !matched && stderr.is_empty() => Ok(false),
+        _ => Err(anyhow!("Cannot determine ADE recovery-key presence: blkid probe failed or was incomplete.")),
+    }
+}
+
+pub(crate) fn ensure_no_rescue_ade_context(actions: &str) -> Result<()> {
+    if !is_requested(actions) {
+        return Ok(());
+    }
+    for path in [
+        constants::RESCUE_BEK_LINUX_PASS_PHRASE_FILE_NAME,
+        constants::RESCUE_TMP_LINUX_PASS_PHRASE_FILE_NAME,
+        constants::ADE_OSENCRYPT_PATH,
+        "/dev/mapper/osencrypt",
+    ] {
+        match fs::symlink_metadata(path) {
+            Ok(_) => {
+                return Err(anyhow!("An ADE recovery key or unlocked mapping is present. NVMe preparation is refused."));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).context("Cannot inspect local ADE recovery context");
+            }
+        }
+    }
+    // This is the same BEK volume label used by ADE recovery, without mounting or reading its key.
+    let probe = Command::new("blkid")
+        .args(["-c", "/dev/null", "-t", "LABEL=BEK VOLUME", "-o", "device"])
+        .output()
+        .context("Cannot inspect ADE recovery-key volumes with blkid")?;
+    let has_bek = bek_probe_detected(probe.status.code(), &probe.stdout, &probe.stderr)?;
+    ensure!(
+        !has_bek,
+        "An ADE BEK recovery-key volume is attached. NVMe preparation is refused, even when the OS disk is plaintext."
+    );
+    Ok(())
+}
 
 #[derive(Debug)]
 pub(crate) struct NvmeController {

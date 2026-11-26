@@ -35,10 +35,23 @@ fn main() -> Result<()> {
         arguments.iter().for_each(|arg| debug!("{arg}"));
     }
 
+    if let Err(e) = nvme::ensure_not_ade(&cli_info.actions, !cli_info.ade_password.is_empty())
+        .and_then(|_| nvme::ensure_no_rescue_ade_context(&cli_info.actions))
+    {
+        error!("NVMe eligibility rejected: {e:#}");
+        process::exit(1);
+    }
+
     // Create a new distro object
     // The distro object will be used to determine the distro of the VM we are trying to recover
     let distro = distro::Distro::new(&mut cli_info);
     info!("Distro details collected : {:#?}", distro);
+
+    if let Err(e) = nvme::ensure_not_ade(&cli_info.actions, distro.is_ade) {
+        error!("NVMe eligibility rejected: {e:#}");
+        helper::cleanup(&distro, &cli_info)?;
+        process::exit(1);
+    }
 
     // After we have collected all the required information we can start the actuall recover process.
     // If we have finished the recovery process it is important to rename the VG 'oldvg' back to 'rootvg'.
@@ -103,7 +116,14 @@ fn main() -> Result<()> {
     } else {
         for action_name in cli_info.actions.split(',') {
             debug!("Running action script: {}", action_name.trim());
-            action::run_repair_script(action_name.trim())?;
+            if let Err(e) = action::run_repair_script(action_name.trim()) {
+                if nvme::is_requested(action_name) {
+                    error!("NVMe preparation failed: {e:#}");
+                    mount::umount(constants::RESCUE_ROOT, true)?;
+                    helper::cleanup(&distro, &cli_info)?;
+                }
+                return Err(e);
+            }
         }
     }
 

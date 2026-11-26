@@ -44,6 +44,98 @@ This action corrects two issues that can happen when a new kernel gets installed
 This action enables both the serialconsole and the GRUB serial. Incorrect vaules get overwritten by a set of defaults
 The correct setup allows you to see the `GRUB Menu` as well get access to the system via the `Azure Serial Console`.
 
+#### nvme
+This action prepares the attached Linux guest for NVMe. ADE-encrypted VMs are
+not eligible, including VMs with ADE only on data disks.
+It performs Linux checks and conditional fixes: built-in
+and initramfs driver detection, NVMe/Hyper-V PCI driver preparation,
+`nvme_core.io_timeout=240`, optional BLS updates, fallback Azure NVMe udev rules,
+and SCSI-to-UUID fstab conversion. Existing ready configurations are skipped.
+The original distro-specific branches, legacy release-file detection, image
+exclusions and diagnostic/error reporting are retained; no additional health
+checks or Azure VM size/controller changes are introduced.
+
+The script retains branches for Ubuntu, Debian, RHEL/CentOS/Rocky/AlmaLinux,
+SLES, Oracle Linux, Azure Linux and Mariner. It uses installed guest kernels
+rather than the running rescue kernel. Live udev reload is deferred to the guest's
+next boot. Script coverage does not guarantee that every image or VM size supports
+NVMe.
+
+Guest kernel releases come from installed kernel package file lists and guest
+boot images/configuration. A module-only directory, such as an older directory
+populated by RHEL's `kmod-kvdo`, is not treated as another installed kernel.
+Package-query failures stop preparation; missing images for genuine installed
+or boot-referenced kernels are not silently skipped.
+
+Each installed guest kernel must have the actual NVMe PCI and Hyper-V PCI drivers
+built in or present in its boot image. Missing images, failed inspections/rebuilds
+and unresolved repair failures stop the action; ALAR cleans up before returning
+the failure. A driver directory or `nvme-core` alone is not sufficient.
+
+On RHEL/CentOS 7, a standalone EFI configuration selected by `/etc/grub2-efi.cfg`
+is checked and regenerated at that actual target. Every kernel entry must have
+exactly one `nvme_core.io_timeout=240` argument. Broken links, redirect stubs and
+failed or ineffective regeneration are reported rather than accepted from an
+unrelated GRUB configuration. Other release and BIOS paths retain the shared
+script's behavior.
+
+Fstab device identities are resolved from mounted guest filesystems, including
+other partitions on those same disks. Unmounted data disks and swap can also be
+resolved with an explicit, guest-visible device map. Set `ALAR_NVME_DEVICE_MAP`
+to a file containing one original-device rescue-device pair per line, for example:
+
+```text
+/dev/sda /dev/sdd
+/dev/disk/azure/scsi1/lun0 /dev/nvme1n1
+```
+
+Mappings can name whole disks or individual partitions. Use only independently
+identified attached guest devices, not rescue OS devices. For example, with the
+map saved on the rescue VM as `/tmp/nvme-device-map`, run
+`ALAR_NVME_DEVICE_MAP=/tmp/nvme-device-map alar nvme`.
+Multi-letter device names such as `/dev/sdaa1` are supported. If any legacy entry
+cannot be resolved, the original fstab remains unchanged and the action fails.
+The action does not guess that an old guest device name still identifies the
+same disk on the rescue VM.
+The original fstab backup remains `/etc/fstab.bak`.
+
+Run `alar nvme` directly. No external CLI command or eligibility report is
+required.
+
+NVMe is refused before any requested repair when ADE credentials, an attached
+`BEK VOLUME`, an existing recovery-key file or an unlocked ADE mapping is found
+on the rescue VM. A BEK supplied by an ADE-aware repair workflow is also a
+positive signal for data-disk-only ADE, even if the recovered OS disk is
+plaintext. Detection uses volume/path metadata only: it does not mount the BEK
+disk or read key contents. Probe failures also refuse NVMe rather than assume
+that no key is present.
+
+Attaching an encrypted disk to an already-created rescue VM does not by itself
+guarantee a BEK volume. The documented [automatic BEK workflow](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/linux/unlock-encrypted-linux-disk-offline-repair)
+attaches the encrypted disk when creating the rescue VM.
+
+Locally encrypted or unidentified encrypted recovery partitions are refused
+before ADE unlocking. Unlocking ADE or removing its extension does not decrypt
+the disks. Server-side encryption and encryption at host are not ADE.
+
+An offline disk alone cannot establish the state of unattached data disks.
+BEK absence is not universal proof that the original VM is ADE-free, especially
+in manual recovery where keys were not attached. The repair workflow/operator
+must still ensure the source VM has no ADE on OS or data disks. Other actions'
+ADE behavior is unchanged. Use `alar nvme`, not the internal action script
+directly, for these local safeguards.
+
+The internal payload retains equivalent default/`-fix` behavior, with no check
+or dry-run modes. No new ALAR CLI flags or Azure API dependencies are added.
+
+**Known framework limitation:** some Oracle Linux disk layouts are classified as
+ADE-encrypted before ALAR reaches the action. Those layouts remain refused;
+this change does not replace the classifier or alter ADE recovery for other
+actions.
+
+The original fix-path diagnostic and exit behavior is preserved: review the
+action output, not just ALAR's exit status, when evaluating preparation results.
+
 #### grubfix
 This action is reinstalling `GRUB` and regenerates the `grub.cfg` file
 

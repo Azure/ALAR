@@ -2,7 +2,7 @@
 // Licensed under the terms found in the LICENSE file in the root of this source tree.
 
 use crate::{constants, helper};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use log::debug;
 use std::io::Write;
 use std::{env, fs, io, process};
@@ -68,8 +68,10 @@ fn is_action_python_script(action_name: &str) -> bool {
 }
 
 pub(crate) fn run_repair_script(action_name: &str) -> Result<()> {
+    let nvme_action = action_name.trim().eq_ignore_ascii_case("nvme");
     match env::set_current_dir(constants::RESCUE_ROOT) {
         Ok(_) => {}
+        Err(e) if nvme_action => return Err(e.into()),
         Err(e) => println!("Error in set current dir : {e}"),
     }
 
@@ -80,7 +82,11 @@ pub(crate) fn run_repair_script(action_name: &str) -> Result<()> {
     };
 
     let command = format!("chmod 500 {}", file_name);
-    helper::run_cmd(&command)?;
+    let permission_result = helper::run_cmd(&command);
+    if nvme_action && permission_result.is_err() {
+        env::set_current_dir("/")?;
+    }
+    permission_result?;
 
     println!("--- Action script output start ---");
     io::stdout().flush().unwrap();
@@ -93,19 +99,27 @@ pub(crate) fn run_repair_script(action_name: &str) -> Result<()> {
         .arg(format!("{} 2>&1", file_name))
         .stdout(process::Stdio::inherit())
         .stderr(process::Stdio::inherit())
-        .status()?;
+        .status();
 
+    // Get out of constants::RESCUE_ROOT, otherwise umount isn't possible for RESCUE_ROOT
+    match env::set_current_dir("/") {
+        Ok(_) => {}
+        Err(e) if nvme_action => return Err(e.into()),
+        Err(e) => println!("Error in set current dir : {e}"),
+    }
+
+    let status = status?;
     io::stdout().flush().unwrap();
     io::stderr().flush().unwrap();
     println!("--- Action script output end (exit code: {}) ---", status.code().unwrap_or(-1));
     io::stdout().flush().unwrap();
 
-    // Get out of constants::RESCUE_ROOT, otherwise umount isn't possible for RESCUE_ROOT
-    match env::set_current_dir("/") {
-        Ok(_) => {}
-        Err(e) => println!("Error in set current dir : {e}"),
+    if nvme_action && !status.success() {
+        return Err(anyhow!(
+            "NVMe action failed with exit code {}",
+            status.code().unwrap_or(-1)
+        ));
     }
-
     Ok(())
 }
 
